@@ -120,7 +120,7 @@ pub const NOTIFY_SUCCESS: u8 = 0x01;
 pub const NOTIFY_FAILURE: u8 = 0x02;
 pub const NOTIFY_DELAY: u8 = 0x04;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mechanism {
     _9798MDsaSha1,
     _9798MEcdsaSha1,
@@ -168,15 +168,79 @@ pub enum Mechanism {
     Unknown,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Capability {
+    EightBitMime,
+    Atrn,
+    Auth {
+        mechanisms: Vec<Mechanism>,
+    },
+    BinaryMime,
+    Burl,
+    Checkpoint,
+    Chunking,
+    Conneg,
+    Conperm,
+    DeliverBy {
+        min: u64,
+    },
+    Dsn,
+    EnhancedStatusCodes,
+    Etrn,
+    Expn,
+    FutureRelease {
+        max_interval: u64,
+        max_datetime: u64,
+    },
+    Help,
+    MtPriority {
+        priority: MtPriority,
+    },
+    Mtrk,
+    NoSoliciting {
+        keywords: Option<String>,
+    },
+    Onex,
+    Pipelining,
+    RequireTls,
+    Rrvs,
+    Size {
+        size: usize,
+    },
+    SmtpUtf8,
+    StartTls,
+    Verb,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MtPriority {
+    Mixer,
+    Stanag4406,
+    Nsep,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EhloResponse {
+    pub hostname: String,
+    pub capabilities: Vec<Capability>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Response {
+    pub code: u16,
+    pub esc: [u8; 3],
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    NeedsMoreData,
+    NeedsMoreData { bytes_left: usize },
     UnknownCommand,
     InvalidAddress,
     SyntaxError { syntax: &'static str },
     InvalidParameter { param: &'static str },
     UnsupportedParameter { param: String },
-    UnexpectedChar { char: u8 },
+    InvalidResponse { response: Response },
 }
 
 pub(crate) const LF: u8 = b'\n';

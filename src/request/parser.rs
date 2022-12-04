@@ -8,8 +8,8 @@ use crate::{
 use super::*;
 
 impl Request<String> {
-    pub fn parse<'x>(bytes: &'x mut Iter<'x, u8>) -> Result<Request<String>, Error> {
-        let mut parser = RequestParser::new(bytes);
+    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
+        let mut parser = Rfc5321Parser::new(bytes);
         let command = parser.hashed_value()?;
         if !parser.stop_char.is_ascii_whitespace() {
             return Err(Error::UnknownCommand);
@@ -289,15 +289,18 @@ impl Request<String> {
     }
 }
 
-struct RequestParser<'x> {
-    bytes: &'x mut Iter<'x, u8>,
-    stop_char: u8,
+pub(crate) struct Rfc5321Parser<'x, 'y> {
+    bytes: &'x mut Iter<'y, u8>,
+    pub(crate) stop_char: u8,
+    bytes_left: usize,
 }
 
-impl<'x> RequestParser<'x> {
-    pub fn new(bytes: &'x mut Iter<'x, u8>) -> Self {
-        RequestParser {
+impl<'x, 'y> Rfc5321Parser<'x, 'y> {
+    pub fn new(bytes: &'x mut Iter<'y, u8>) -> Self {
+        let (bytes_left, _) = bytes.size_hint();
+        Rfc5321Parser {
             bytes,
+            bytes_left,
             stop_char: 0,
         }
     }
@@ -309,12 +312,12 @@ impl<'x> RequestParser<'x> {
 
         while let Some(&ch) = self.bytes.next() {
             match ch {
-                b'A'..=b'Z' if shift < 64 => {
-                    value |= ((ch - b'A' + b'a') as u64) << shift;
+                b'A'..=b'Z' | b'0'..=b'9' | b'-' if shift < 64 => {
+                    value |= (ch as u64) << shift;
                     shift += 8;
                 }
-                b'a'..=b'z' | b'0'..=b'9' | b'-' if shift < 64 => {
-                    value |= (ch as u64) << shift;
+                b'a'..=b'z' if shift < 64 => {
+                    value |= ((ch - b'a' + b'A') as u64) << shift;
                     shift += 8;
                 }
                 b'\r' => (),
@@ -331,7 +334,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     #[allow(clippy::while_let_on_iterator)]
@@ -341,12 +346,12 @@ impl<'x> RequestParser<'x> {
 
         while let Some(&ch) = self.bytes.next() {
             match ch {
-                b'A'..=b'Z' if shift < 128 => {
-                    value |= ((ch - b'A' + b'a') as u128) << shift;
+                b'A'..=b'Z' | b'0'..=b'9' | b'-' if shift < 128 => {
+                    value |= (ch as u128) << shift;
                     shift += 8;
                 }
-                b'a'..=b'z' | b'0'..=b'9' | b'-' if shift < 128 => {
-                    value |= (ch as u128) << shift;
+                b'a'..=b'z' if shift < 128 => {
+                    value |= ((ch - b'a' + b'A') as u128) << shift;
                     shift += 8;
                 }
                 b' ' => {
@@ -363,7 +368,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn address(&mut self) -> Result<Option<String>, Error> {
@@ -470,7 +477,9 @@ impl<'x> RequestParser<'x> {
             last_ch = ch;
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn string(&mut self) -> Result<String, Error> {
@@ -503,7 +512,9 @@ impl<'x> RequestParser<'x> {
             last_ch = ch;
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     #[allow(clippy::while_let_on_iterator)]
@@ -526,7 +537,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     #[allow(clippy::while_let_on_iterator)]
@@ -572,7 +585,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     #[allow(clippy::while_let_on_iterator)]
@@ -602,7 +617,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     #[inline(always)]
@@ -613,7 +630,9 @@ impl<'x> RequestParser<'x> {
                     return Ok(());
                 }
             }
-            Err(Error::NeedsMoreData)
+            Err(Error::NeedsMoreData {
+                bytes_left: self.bytes_left,
+            })
         } else {
             Ok(())
         }
@@ -630,7 +649,16 @@ impl<'x> RequestParser<'x> {
                 }
             }
         }
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
+    }
+
+    #[inline(always)]
+    pub fn read_char(&mut self) -> Result<u8, Error> {
+        self.bytes.next().copied().ok_or(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn size(&mut self) -> Result<usize, Error> {
@@ -659,7 +687,9 @@ impl<'x> RequestParser<'x> {
                 }
             }
         }
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn integer(&mut self) -> Result<i64, Error> {
@@ -696,7 +726,9 @@ impl<'x> RequestParser<'x> {
                 }
             }
         }
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn timestamp(&mut self) -> Result<i64, Error> {
@@ -752,7 +784,9 @@ impl<'x> RequestParser<'x> {
             }
         }
 
-        Err(Error::NeedsMoreData)
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
     }
 
     pub fn parameters(&mut self) -> Result<Vec<Parameter<String>>, Error> {
@@ -1012,7 +1046,7 @@ impl<'x> RequestParser<'x> {
         Ok(params)
     }
 
-    fn mechanism(&mut self) -> Result<Option<Mechanism>, Error> {
+    pub(crate) fn mechanism(&mut self) -> Result<Option<Mechanism>, Error> {
         let mut trailing_chars = [0u8; 8];
         let mut pos = 0;
         let mechanism = self.hashed_value_long()?;
@@ -1031,7 +1065,9 @@ impl<'x> RequestParser<'x> {
                 }
             }
             if !self.stop_char.is_ascii_whitespace() {
-                return Err(Error::NeedsMoreData);
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
             } else if pos > 8 {
                 return Ok(Mechanism::Unknown.into());
             }
