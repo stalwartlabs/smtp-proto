@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub mod request;
 pub mod response;
 
@@ -220,16 +222,36 @@ pub enum MtPriority {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EhloResponse {
-    pub hostname: String,
+pub struct EhloResponse<T: Display> {
+    pub hostname: T,
     pub capabilities: Vec<Capability>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Response {
-    pub code: u16,
+pub struct Response<T: Display> {
+    pub code: [u8; 3],
     pub esc: [u8; 3],
-    pub message: String,
+    pub message: T,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    PositiveCompletion = 2,
+    PositiveIntermediate = 3,
+    TransientNegativeCompletion = 4,
+    PermanentNegativeCompletion = 5,
+    Invalid = 0,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Category {
+    Syntax = 0,
+    Information = 1,
+    Connections = 2,
+    Unspecified3 = 3,
+    Unspecified4 = 4,
+    MailSystem = 5,
+    Invalid = 6,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,7 +262,7 @@ pub enum Error {
     SyntaxError { syntax: &'static str },
     InvalidParameter { param: &'static str },
     UnsupportedParameter { param: String },
-    InvalidResponse { response: Response },
+    InvalidResponse { response: Response<String> },
 }
 
 pub(crate) const LF: u8 = b'\n';
@@ -254,5 +276,43 @@ impl IntoString for Vec<u8> {
     fn into_string(self) -> String {
         String::from_utf8(self)
             .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn csv() {
+        // Build the CSV reader and iterate over each record.
+        let mut rdr = csv::Reader::from_path("smtp-enhanced-status-codes-1.csv").unwrap();
+        for result in rdr.records() {
+            // The iterator yields Result<StringRecord, Error>, so we check the
+            // error here.
+            let record = result.unwrap();
+            let codes = record.get(0).unwrap().split('.').collect::<Vec<_>>();
+            let title = record.get(1).unwrap().replace('\n', " ");
+            let desc = record
+                .get(2)
+                .unwrap()
+                .replace('\n', " ")
+                .replace('"', "\\\"")
+                .replace("This is useful only as a persistent transient error.", "")
+                .replace(
+                    "This is useful for both permanent and persistent transient errors.",
+                    "",
+                )
+                .replace("This is useful only as a permanent error.", "")
+                .trim()
+                .replace("  ", " ")
+                .chars()
+                .collect::<Vec<_>>()
+                .chunks(50)
+                .map(|s| format!("\"{}\"", s.iter().collect::<String>()))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            println!("{} => (\"{}\", concat!({})).into(),", codes[0], title, desc);
+        }
     }
 }

@@ -1,3 +1,4 @@
+pub mod generate;
 pub mod parser;
 
 pub(crate) const _8BITMIME: u128 = (b'8' as u128)

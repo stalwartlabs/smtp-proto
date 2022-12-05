@@ -5,10 +5,10 @@ use crate::{
     NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS, SP,
 };
 
-use super::*;
+use super::{receiver::ReceiverParser, *};
 
-impl Request<String> {
-    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
+impl ReceiverParser for Request<String> {
+    fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
         let command = parser.hashed_value()?;
         if !parser.stop_char.is_ascii_whitespace() {
@@ -1137,8 +1137,8 @@ impl TryFrom<u128> for Body {
 #[cfg(test)]
 mod tests {
     use crate::{
-        Body, By, Error, Mechanism, Mtrk, Orcpt, Parameter, Request, Ret, Rrvs, NOTIFY_DELAY,
-        NOTIFY_FAILURE, NOTIFY_SUCCESS,
+        request::receiver::ReceiverParser, Body, By, Error, Mechanism, Mtrk, Orcpt, Parameter,
+        Request, Ret, Rrvs, NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS,
     };
 
     #[test]

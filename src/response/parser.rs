@@ -1,14 +1,14 @@
 use std::slice::Iter;
 
 use crate::{
-    request::parser::Rfc5321Parser, Capability, EhloResponse, Error, IntoString, MtPriority,
-    Response, LF,
+    request::{parser::Rfc5321Parser, receiver::ReceiverParser},
+    Capability, EhloResponse, Error, IntoString, MtPriority, Response, LF,
 };
 
 use super::*;
 
-impl EhloResponse {
-    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<EhloResponse, Error> {
+impl ReceiverParser for EhloResponse<String> {
+    fn parse(bytes: &mut Iter<'_, u8>) -> Result<EhloResponse<String>, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
         let mut response = EhloResponse {
             hostname: String::new(),
@@ -16,17 +16,29 @@ impl EhloResponse {
         };
         let mut eol = false;
         let mut buf = Vec::with_capacity(32);
-        let mut code = u16::MAX;
+        let mut code = [0u8; 3];
         let mut is_first_line = true;
+        let mut did_success = false;
 
         while !eol {
-            code = parser.size()? as u16;
-            match parser.stop_char {
+            for code in code.iter_mut() {
+                match parser.read_char()? {
+                    ch @ b'0'..=b'9' => {
+                        *code = ch - b'0';
+                    }
+                    _ => {
+                        return Err(Error::SyntaxError {
+                            syntax: "unexpected token",
+                        });
+                    }
+                }
+            }
+            match parser.read_char()? {
                 b' ' => {
                     eol = true;
                 }
                 b'-' => (),
-                b'\n' if code < 600 => {
+                b'\n' if code[0] < 6 => {
                     break;
                 }
                 _ => {
@@ -36,7 +48,9 @@ impl EhloResponse {
                 }
             }
 
-            if !is_first_line && code == 250 {
+            did_success = code[0] == 2 && code[1] == 5 && code[2] == 0;
+
+            if !is_first_line && did_success {
                 response
                     .capabilities
                     .push(match parser.hashed_value_long()? {
@@ -157,18 +171,17 @@ impl EhloResponse {
                     });
                 parser.seek_lf()?;
             } else {
-                let is_hostname = code == 250;
                 if is_first_line {
                     is_first_line = false;
-                } else if !buf.is_empty() && !matches!(buf.last(), Some(b' ')) {
-                    buf.push(b' ');
+                } else if !buf.is_empty() {
+                    buf.extend_from_slice(b"\r\n");
                 }
 
                 loop {
                     match parser.read_char()? {
                         b'\n' => break,
                         b'\r' => (),
-                        b' ' if is_hostname => {
+                        b' ' if did_success => {
                             parser.seek_lf()?;
                             break;
                         }
@@ -178,14 +191,14 @@ impl EhloResponse {
                     }
                 }
 
-                if is_hostname {
+                if did_success {
                     response.hostname = buf.into_string();
                     buf = Vec::new();
                 }
             }
         }
 
-        if code == 250 {
+        if did_success {
             Ok(response)
         } else {
             Err(Error::InvalidResponse {
@@ -199,25 +212,33 @@ impl EhloResponse {
     }
 }
 
-impl Response {
-    pub fn parse(bytes: &mut Iter<'_, u8>, has_esc: bool) -> Result<Response, Error> {
+impl Response<String> {
+    pub fn parse(bytes: &mut Iter<'_, u8>, has_esc: bool) -> Result<Response<String>, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
-        let mut code = 0;
+        let mut code = [0u8; 3];
         let mut message = Vec::with_capacity(32);
         let mut esc = [0u8; 3];
         let mut eol = false;
 
         'outer: while !eol {
-            code = match parser.size()? {
-                val @ 100..=999 => val as u16,
-                _ => 0,
-            };
-            match parser.stop_char {
+            for code in code.iter_mut() {
+                match parser.read_char()? {
+                    ch @ b'0'..=b'9' => {
+                        *code = ch - b'0';
+                    }
+                    _ => {
+                        return Err(Error::SyntaxError {
+                            syntax: "unexpected token",
+                        })
+                    }
+                }
+            }
+            match parser.read_char()? {
                 b' ' => {
                     eol = true;
                 }
                 b'-' => (),
-                b'\n' if code < 600 => {
+                b'\n' if code[0] < 6 => {
                     break;
                 }
                 _ => {
@@ -352,7 +373,10 @@ impl Capability {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Capability, EhloResponse, Error, Mechanism, MtPriority, Response};
+    use crate::{
+        request::receiver::ReceiverParser, Capability, EhloResponse, Error, Mechanism, MtPriority,
+        Response,
+    };
 
     #[test]
     fn parse_ehlo() {
@@ -460,33 +484,24 @@ mod tests {
                 concat!("523-Massive\n", "523-Error\n", "523 Message\n"),
                 Err(Error::InvalidResponse {
                     response: Response {
-                        code: 523,
+                        code: [5, 2, 3],
                         esc: [0, 0, 0],
-                        message: "Massive Error Message".to_string(),
+                        message: "Massive\r\nError\r\nMessage".to_string(),
                     },
                 }),
             ),
         ] {
-            let (response, parsed_response): (&str, Result<EhloResponse, Error>) = item;
+            let (response, parsed_response): (&str, Result<EhloResponse<String>, Error>) = item;
 
             for replacement in ["", "\r\n", " \n", " \r\n"] {
-                let response = if !replacement.is_empty() {
+                let response = if !replacement.is_empty() && parsed_response.is_ok() {
                     response.replace('\n', replacement)
                 } else {
                     response.to_string()
                 };
                 assert_eq!(
                     parsed_response,
-                    EhloResponse::parse(&mut response.as_bytes().iter()).map_err(|err| match err {
-                        Error::InvalidResponse { response } => Error::InvalidResponse {
-                            response: Response {
-                                code: response.code,
-                                esc: response.esc,
-                                message: response.message.trim_end().to_string()
-                            }
-                        },
-                        err => err,
-                    }),
+                    EhloResponse::parse(&mut response.as_bytes().iter()),
                     "failed for {:?}",
                     response
                 );
@@ -500,7 +515,7 @@ mod tests {
             (
                 "250 2.1.1 Originator <ned@ymir.claremont.edu> ok\n",
                 Response {
-                    code: 250,
+                    code: [2, 5, 0],
                     esc: [2, 1, 1],
                     message: "Originator <ned@ymir.claremont.edu> ok".to_string(),
                 },
@@ -512,7 +527,7 @@ mod tests {
                     "551 5.7.1 Select another host to act as your forwarder\n"
                 ),
                 Response {
-                    code: 551,
+                    code: [5, 5, 1],
                     esc: [5, 7, 1],
                     message: concat!(
                         "Forwarding to remote hosts disabled ",
@@ -528,7 +543,7 @@ mod tests {
                     "550 user has moved with no forwarding address\n"
                 ),
                 Response {
-                    code: 550,
+                    code: [5, 5, 0],
                     esc: [0, 0, 0],
                     message: "mailbox unavailable user has moved with no forwarding address"
                         .to_string(),
@@ -541,7 +556,7 @@ mod tests {
                     "550 user has moved with no forwarding address\n"
                 ),
                 Response {
-                    code: 550,
+                    code: [5, 5, 0],
                     esc: [0, 0, 0],
                     message: "mailbox unavailable user has moved with no forwarding address"
                         .to_string(),
@@ -562,7 +577,7 @@ mod tests {
                     "432 6.8.9 World!\n"
                 ),
                 Response {
-                    code: 432,
+                    code: [4, 3, 2],
                     esc: [6, 8, 9],
                     message: "Hello , World!".to_string(),
                 },
@@ -571,7 +586,7 @@ mod tests {
             (
                 concat!("250-Missing space\n", "250\n", "250 Ignore this"),
                 Response {
-                    code: 250,
+                    code: [2, 5, 0],
                     esc: [0, 0, 0],
                     message: "Missing space".to_string(),
                 },
