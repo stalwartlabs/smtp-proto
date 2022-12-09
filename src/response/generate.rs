@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::{Capability, Category, EhloResponse, Mechanism, MtPriority, Response, Severity};
+use crate::*;
 
 impl<T: Display> EhloResponse<T> {
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
@@ -17,8 +17,11 @@ impl<T: Display> EhloResponse<T> {
                 Capability::Atrn => write!(writer, "ATRN\r\n"),
                 Capability::Auth { mechanisms } => {
                     writer.write_all(b"AUTH")?;
-                    for mechanism in mechanisms {
-                        write!(writer, " {}", mechanism)?;
+                    let mut mechanisms = *mechanisms;
+                    while mechanisms != 0 {
+                        let item = 63 - mechanisms.leading_zeros();
+                        mechanisms ^= 1 << item;
+                        write!(writer, " {}", (item as u64).as_mechanism())?;
                     }
                     writer.write_all(b"\r\n")
                 }
@@ -55,6 +58,7 @@ impl<T: Display> EhloResponse<T> {
                         MtPriority::Mixer => "MIXER",
                         MtPriority::Stanag4406 => "STANAG4406",
                         MtPriority::Nsep => "NSEP",
+                        MtPriority::None => "MIXER",
                     }
                 ),
                 Capability::Mtrk => write!(writer, "MTRK\r\n"),
@@ -102,53 +106,57 @@ impl<T: Display> Response<T> {
     }
 }
 
-impl Display for Mechanism {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Mechanism::_9798MDsaSha1 => "9798-M-DSA-SHA1",
-            Mechanism::_9798MEcdsaSha1 => "9798-M-ECDSA-SHA1",
-            Mechanism::_9798MRsaSha1Enc => "9798-M-RSA-SHA1-ENC",
-            Mechanism::_9798UDsaSha1 => "9798-U-DSA-SHA1",
-            Mechanism::_9798UEcdsaSha1 => "9798-U-ECDSA-SHA1",
-            Mechanism::_9798URsaSha1Enc => "9798-U-RSA-SHA1-ENC",
-            Mechanism::Anonymous => "ANONYMOUS",
-            Mechanism::CramMd5 => "CRAM-MD5",
-            Mechanism::DigestMd5 => "DIGEST-MD5",
-            Mechanism::EapAes128 => "EAP-AES128",
-            Mechanism::EapAes128Plus => "EAP-AES128-PLUS",
-            Mechanism::EcdhX25519Challenge => "ECDH-X25519-CHALLENGE",
-            Mechanism::EcdsaNist256pChallenge => "ECDSA-NIST256P-CHALLENGE",
-            Mechanism::External => "EXTERNAL",
-            Mechanism::Gs2Krb5 => "GS2-KRB5",
-            Mechanism::Gs2Krb5Plus => "GS2-KRB5-PLUS",
-            Mechanism::GssSpnego => "GSS-SPNEGO",
-            Mechanism::Gssapi => "GSSAPI",
-            Mechanism::KerberosV4 => "KERBEROS_V4",
-            Mechanism::KerberosV5 => "KERBEROS_V5",
-            Mechanism::Login => "LOGIN",
-            Mechanism::NmasSambaAuth => "NMAS-SAMBA-AUTH",
-            Mechanism::NmasAuthen => "NMAS_AUTHEN",
-            Mechanism::NmasLogin => "NMAS_LOGIN",
-            Mechanism::Ntlm => "NTLM",
-            Mechanism::Oauth10a => "OAUTH10A",
-            Mechanism::Oauthbearer => "OAUTHBEARER",
-            Mechanism::Openid20 => "OPENID20",
-            Mechanism::Otp => "OTP",
-            Mechanism::Plain => "PLAIN",
-            Mechanism::Saml20 => "SAML20",
-            Mechanism::ScramSha1 => "SCRAM-SHA-1",
-            Mechanism::ScramSha1Plus => "SCRAM-SHA-1-PLUS",
-            Mechanism::ScramSha256 => "SCRAM-SHA-256",
-            Mechanism::ScramSha256Plus => "SCRAM-SHA-256-PLUS",
-            Mechanism::Securid => "SECURID",
-            Mechanism::Skey => "SKEY",
-            Mechanism::Spnego => "SPNEGO",
-            Mechanism::SpnegoPlus => "SPNEGO-PLUS",
-            Mechanism::SxoverPlus => "SXOVER-PLUS",
-            Mechanism::Xoauth => "XOAUTH",
-            Mechanism::Xoauth2 => "XOAUTH2",
-            Mechanism::Unknown => "",
-        })
+trait AsMechanism {
+    fn as_mechanism(&self) -> &'static str;
+}
+
+impl AsMechanism for u64 {
+    fn as_mechanism(&self) -> &'static str {
+        match *self {
+            AUTH_SCRAM_SHA_256_PLUS => "SCRAM-SHA-256-PLUS",
+            AUTH_SCRAM_SHA_256 => "SCRAM-SHA-256",
+            AUTH_SCRAM_SHA_1_PLUS => "SCRAM-SHA-1-PLUS",
+            AUTH_SCRAM_SHA_1 => "SCRAM-SHA-1",
+            AUTH_OAUTHBEARER => "OAUTHBEARER",
+            AUTH_XOAUTH => "XOAUTH",
+            AUTH_XOAUTH2 => "XOAUTH2",
+            AUTH_9798_M_DSA_SHA1 => "9798-M-DSA-SHA1",
+            AUTH_9798_M_ECDSA_SHA1 => "9798-M-ECDSA-SHA1",
+            AUTH_9798_M_RSA_SHA1_ENC => "9798-M-RSA-SHA1-ENC",
+            AUTH_9798_U_DSA_SHA1 => "9798-U-DSA-SHA1",
+            AUTH_9798_U_ECDSA_SHA1 => "9798-U-ECDSA-SHA1",
+            AUTH_9798_U_RSA_SHA1_ENC => "9798-U-RSA-SHA1-ENC",
+            AUTH_EAP_AES128 => "EAP-AES128",
+            AUTH_EAP_AES128_PLUS => "EAP-AES128-PLUS",
+            AUTH_ECDH_X25519_CHALLENGE => "ECDH-X25519-CHALLENGE",
+            AUTH_ECDSA_NIST256P_CHALLENGE => "ECDSA-NIST256P-CHALLENGE",
+            AUTH_EXTERNAL => "EXTERNAL",
+            AUTH_GS2_KRB5 => "GS2-KRB5",
+            AUTH_GS2_KRB5_PLUS => "GS2-KRB5-PLUS",
+            AUTH_GSS_SPNEGO => "GSS-SPNEGO",
+            AUTH_GSSAPI => "GSSAPI",
+            AUTH_KERBEROS_V4 => "KERBEROS_V4",
+            AUTH_KERBEROS_V5 => "KERBEROS_V5",
+            AUTH_NMAS_SAMBA_AUTH => "NMAS-SAMBA-AUTH",
+            AUTH_NMAS_AUTHEN => "NMAS_AUTHEN",
+            AUTH_NMAS_LOGIN => "NMAS_LOGIN",
+            AUTH_NTLM => "NTLM",
+            AUTH_OAUTH10A => "OAUTH10A",
+            AUTH_OPENID20 => "OPENID20",
+            AUTH_OTP => "OTP",
+            AUTH_SAML20 => "SAML20",
+            AUTH_SECURID => "SECURID",
+            AUTH_SKEY => "SKEY",
+            AUTH_SPNEGO => "SPNEGO",
+            AUTH_SPNEGO_PLUS => "SPNEGO-PLUS",
+            AUTH_SXOVER_PLUS => "SXOVER-PLUS",
+            AUTH_CRAM_MD5 => "CRAM-MD5",
+            AUTH_DIGEST_MD5 => "DIGEST-MD5",
+            AUTH_LOGIN => "LOGIN",
+            AUTH_PLAIN => "PLAIN",
+            AUTH_ANONYMOUS => "ANONYMOUS",
+            _ => "",
+        }
     }
 }
 

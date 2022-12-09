@@ -57,10 +57,10 @@ impl ReceiverParser for EhloResponse<String> {
                         _8BITMIME => Capability::EightBitMime,
                         ATRN => Capability::Atrn,
                         AUTH => {
-                            let mut mechanisms = Vec::new();
+                            let mut mechanisms = 0;
                             while parser.stop_char != LF {
                                 if let Some(mechanism) = parser.mechanism()? {
-                                    mechanisms.push(mechanism);
+                                    mechanisms |= mechanism;
                                 }
                             }
 
@@ -306,10 +306,7 @@ impl Capability {
         } else if value.eq_ignore_ascii_case(b"ATRN") {
             Capability::Atrn.into()
         } else if value.eq_ignore_ascii_case(b"AUTH") {
-            Capability::Auth {
-                mechanisms: Vec::new(),
-            }
-            .into()
+            Capability::Auth { mechanisms: 0 }.into()
         } else if value.eq_ignore_ascii_case(b"BINARYMIME") {
             Capability::BinaryMime.into()
         } else if value.eq_ignore_ascii_case(b"BURL") {
@@ -374,8 +371,8 @@ impl Capability {
 #[cfg(test)]
 mod tests {
     use crate::{
-        request::receiver::ReceiverParser, Capability, EhloResponse, Error, Mechanism, MtPriority,
-        Response,
+        request::receiver::ReceiverParser, Capability, EhloResponse, Error, MtPriority, Response,
+        AUTH_DIGEST_MD5, AUTH_GSSAPI, AUTH_PLAIN,
     };
 
     #[test]
@@ -424,11 +421,7 @@ mod tests {
                         Capability::EightBitMime,
                         Capability::Atrn,
                         Capability::Auth {
-                            mechanisms: vec![
-                                Mechanism::Gssapi,
-                                Mechanism::DigestMd5,
-                                Mechanism::Plain,
-                            ],
+                            mechanisms: AUTH_GSSAPI | AUTH_DIGEST_MD5 | AUTH_PLAIN,
                         },
                         Capability::BinaryMime,
                         Capability::Burl,

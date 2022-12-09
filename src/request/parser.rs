@@ -1,9 +1,6 @@
 use std::slice::Iter;
 
-use crate::{
-    Body, By, Error, IntoString, Mechanism, Mtrk, Orcpt, Parameter, Request, Ret, Rrvs, LF,
-    NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS, SP,
-};
+use crate::*;
 
 use super::{receiver::ReceiverParser, *};
 
@@ -1046,7 +1043,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         Ok(params)
     }
 
-    pub(crate) fn mechanism(&mut self) -> Result<Option<Mechanism>, Error> {
+    pub(crate) fn mechanism(&mut self) -> Result<Option<u64>, Error> {
         let mut trailing_chars = [0u8; 8];
         let mut pos = 0;
         let mechanism = self.hashed_value_long()?;
@@ -1069,54 +1066,54 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     bytes_left: self.bytes_left,
                 });
             } else if pos > 8 {
-                return Ok(Mechanism::Unknown.into());
+                return Ok(0.into());
             }
         }
         Ok(match (mechanism, &trailing_chars[..pos]) {
-            (_9798_M_DSA_SHA1, b"") => Mechanism::_9798MDsaSha1.into(),
-            (_9798_M_ECDSA_SHA, b"1") => Mechanism::_9798MEcdsaSha1.into(),
-            (_9798_M_RSA_SHA1_, b"ENC") => Mechanism::_9798MRsaSha1Enc.into(),
-            (_9798_U_DSA_SHA1, b"") => Mechanism::_9798UDsaSha1.into(),
-            (_9798_U_ECDSA_SHA, b"1") => Mechanism::_9798UEcdsaSha1.into(),
-            (_9798_U_RSA_SHA1_, b"ENC") => Mechanism::_9798URsaSha1Enc.into(),
-            (ANONYMOUS, b"") => Mechanism::Anonymous.into(),
-            (CRAM_MD5, b"") => Mechanism::CramMd5.into(),
-            (DIGEST_MD5, b"") => Mechanism::DigestMd5.into(),
-            (EAP_AES128, b"") => Mechanism::EapAes128.into(),
-            (EAP_AES128_PLUS, b"") => Mechanism::EapAes128Plus.into(),
-            (ECDH_X25519_CHAL, b"LENGE") => Mechanism::EcdhX25519Challenge.into(),
-            (ECDSA_NIST256P_C, b"HALLENGE") => Mechanism::EcdsaNist256pChallenge.into(),
-            (EXTERNAL, b"") => Mechanism::External.into(),
-            (GS2_KRB5, b"") => Mechanism::Gs2Krb5.into(),
-            (GS2_KRB5_PLUS, b"") => Mechanism::Gs2Krb5Plus.into(),
-            (GSS_SPNEGO, b"") => Mechanism::GssSpnego.into(),
-            (GSSAPI, b"") => Mechanism::Gssapi.into(),
-            (KERBEROS_V4, b"") => Mechanism::KerberosV4.into(),
-            (KERBEROS_V5, b"") => Mechanism::KerberosV5.into(),
-            (LOGIN, b"") => Mechanism::Login.into(),
-            (NMAS_SAMBA_AUTH, b"") => Mechanism::NmasSambaAuth.into(),
-            (NMAS_AUTHEN, b"") => Mechanism::NmasAuthen.into(),
-            (NMAS_LOGIN, b"") => Mechanism::NmasLogin.into(),
-            (NTLM, b"") => Mechanism::Ntlm.into(),
-            (OAUTH10A, b"") => Mechanism::Oauth10a.into(),
-            (OAUTHBEARER, b"") => Mechanism::Oauthbearer.into(),
-            (OPENID20, b"") => Mechanism::Openid20.into(),
-            (OTP, b"") => Mechanism::Otp.into(),
-            (PLAIN, b"") => Mechanism::Plain.into(),
-            (SAML20, b"") => Mechanism::Saml20.into(),
-            (SCRAM_SHA_1, b"") => Mechanism::ScramSha1.into(),
-            (SCRAM_SHA_1_PLUS, b"") => Mechanism::ScramSha1Plus.into(),
-            (SCRAM_SHA_256, b"") => Mechanism::ScramSha256.into(),
-            (SCRAM_SHA_256_PL, b"US") => Mechanism::ScramSha256Plus.into(),
-            (SECURID, b"") => Mechanism::Securid.into(),
-            (SKEY, b"") => Mechanism::Skey.into(),
-            (SPNEGO, b"") => Mechanism::Spnego.into(),
-            (SPNEGO_PLUS, b"") => Mechanism::SpnegoPlus.into(),
-            (SXOVER_PLUS, b"") => Mechanism::SxoverPlus.into(),
-            (XOAUTH, b"") => Mechanism::Xoauth.into(),
-            (XOAUTH2, b"") => Mechanism::Xoauth2.into(),
+            (_9798_M_DSA_SHA1, b"") => AUTH_9798_M_DSA_SHA1.into(),
+            (_9798_M_ECDSA_SHA, b"1") => AUTH_9798_M_ECDSA_SHA1.into(),
+            (_9798_M_RSA_SHA1_, b"ENC") => AUTH_9798_M_RSA_SHA1_ENC.into(),
+            (_9798_U_DSA_SHA1, b"") => AUTH_9798_U_DSA_SHA1.into(),
+            (_9798_U_ECDSA_SHA, b"1") => AUTH_9798_U_ECDSA_SHA1.into(),
+            (_9798_U_RSA_SHA1_, b"ENC") => AUTH_9798_U_RSA_SHA1_ENC.into(),
+            (ANONYMOUS, b"") => AUTH_ANONYMOUS.into(),
+            (CRAM_MD5, b"") => AUTH_CRAM_MD5.into(),
+            (DIGEST_MD5, b"") => AUTH_DIGEST_MD5.into(),
+            (EAP_AES128, b"") => AUTH_EAP_AES128.into(),
+            (EAP_AES128_PLUS, b"") => AUTH_EAP_AES128_PLUS.into(),
+            (ECDH_X25519_CHAL, b"LENGE") => AUTH_ECDH_X25519_CHALLENGE.into(),
+            (ECDSA_NIST256P_C, b"HALLENGE") => AUTH_ECDSA_NIST256P_CHALLENGE.into(),
+            (EXTERNAL, b"") => AUTH_EXTERNAL.into(),
+            (GS2_KRB5, b"") => AUTH_GS2_KRB5.into(),
+            (GS2_KRB5_PLUS, b"") => AUTH_GS2_KRB5_PLUS.into(),
+            (GSS_SPNEGO, b"") => AUTH_GSS_SPNEGO.into(),
+            (GSSAPI, b"") => AUTH_GSSAPI.into(),
+            (KERBEROS_V4, b"") => AUTH_KERBEROS_V4.into(),
+            (KERBEROS_V5, b"") => AUTH_KERBEROS_V5.into(),
+            (LOGIN, b"") => AUTH_LOGIN.into(),
+            (NMAS_SAMBA_AUTH, b"") => AUTH_NMAS_SAMBA_AUTH.into(),
+            (NMAS_AUTHEN, b"") => AUTH_NMAS_AUTHEN.into(),
+            (NMAS_LOGIN, b"") => AUTH_NMAS_LOGIN.into(),
+            (NTLM, b"") => AUTH_NTLM.into(),
+            (OAUTH10A, b"") => AUTH_OAUTH10A.into(),
+            (OAUTHBEARER, b"") => AUTH_OAUTHBEARER.into(),
+            (OPENID20, b"") => AUTH_OPENID20.into(),
+            (OTP, b"") => AUTH_OTP.into(),
+            (PLAIN, b"") => AUTH_PLAIN.into(),
+            (SAML20, b"") => AUTH_SAML20.into(),
+            (SCRAM_SHA_1, b"") => AUTH_SCRAM_SHA_1.into(),
+            (SCRAM_SHA_1_PLUS, b"") => AUTH_SCRAM_SHA_1_PLUS.into(),
+            (SCRAM_SHA_256, b"") => AUTH_SCRAM_SHA_256.into(),
+            (SCRAM_SHA_256_PL, b"US") => AUTH_SCRAM_SHA_256_PLUS.into(),
+            (SECURID, b"") => AUTH_SECURID.into(),
+            (SKEY, b"") => AUTH_SKEY.into(),
+            (SPNEGO, b"") => AUTH_SPNEGO.into(),
+            (SPNEGO_PLUS, b"") => AUTH_SPNEGO_PLUS.into(),
+            (SXOVER_PLUS, b"") => AUTH_SXOVER_PLUS.into(),
+            (XOAUTH, b"") => AUTH_XOAUTH.into(),
+            (XOAUTH2, b"") => AUTH_XOAUTH2.into(),
             (0, b"") => None,
-            _ => Mechanism::Unknown.into(),
+            _ => 0.into(),
         })
     }
 }
@@ -1137,8 +1134,9 @@ impl TryFrom<u128> for Body {
 #[cfg(test)]
 mod tests {
     use crate::{
-        request::receiver::ReceiverParser, Body, By, Error, Mechanism, Mtrk, Orcpt, Parameter,
-        Request, Ret, Rrvs, NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS,
+        request::receiver::ReceiverParser, Body, By, Error, Mtrk, Orcpt, Parameter, Request, Ret,
+        Rrvs, AUTH_ECDSA_NIST256P_CHALLENGE, AUTH_GSSAPI, AUTH_SCRAM_SHA_256_PLUS, NOTIFY_DELAY,
+        NOTIFY_FAILURE, NOTIFY_SUCCESS,
     };
 
     #[test]
@@ -1312,28 +1310,28 @@ mod tests {
             (
                 "AUTH GSSAPI",
                 Ok(Request::Auth {
-                    mechanism: Mechanism::Gssapi,
+                    mechanism: AUTH_GSSAPI,
                     initial_response: "".to_string(),
                 }),
             ),
             (
                 "AUTH ECDSA-NIST256P-CHALLENGE =",
                 Ok(Request::Auth {
-                    mechanism: Mechanism::EcdsaNist256pChallenge,
+                    mechanism: AUTH_ECDSA_NIST256P_CHALLENGE,
                     initial_response: "=".to_string(),
                 }),
             ),
             (
                 "AUTH SCRAM-SHA-256-PLUS base64_goes_here",
                 Ok(Request::Auth {
-                    mechanism: Mechanism::ScramSha256Plus,
+                    mechanism: AUTH_SCRAM_SHA_256_PLUS,
                     initial_response: "base64_goes_here".to_string(),
                 }),
             ),
             (
                 "AUTH ECDSA-NIST256P-CHALLENGE100 abcde",
                 Ok(Request::Auth {
-                    mechanism: Mechanism::Unknown,
+                    mechanism: 0,
                     initial_response: "abcde".to_string(),
                 }),
             ),

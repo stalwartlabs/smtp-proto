@@ -27,7 +27,7 @@ pub enum Request<T> {
         is_last: bool,
     },
     Auth {
-        mechanism: Mechanism,
+        mechanism: u64,
         initial_response: T,
     },
     Noop {
@@ -122,60 +122,55 @@ pub const NOTIFY_SUCCESS: u8 = 0x01;
 pub const NOTIFY_FAILURE: u8 = 0x02;
 pub const NOTIFY_DELAY: u8 = 0x04;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Mechanism {
-    _9798MDsaSha1,
-    _9798MEcdsaSha1,
-    _9798MRsaSha1Enc,
-    _9798UDsaSha1,
-    _9798UEcdsaSha1,
-    _9798URsaSha1Enc,
-    Anonymous,
-    CramMd5,
-    DigestMd5,
-    EapAes128,
-    EapAes128Plus,
-    EcdhX25519Challenge,
-    EcdsaNist256pChallenge,
-    External,
-    Gs2Krb5,
-    Gs2Krb5Plus,
-    GssSpnego,
-    Gssapi,
-    KerberosV4,
-    KerberosV5,
-    Login,
-    NmasSambaAuth,
-    NmasAuthen,
-    NmasLogin,
-    Ntlm,
-    Oauth10a,
-    Oauthbearer,
-    Openid20,
-    Otp,
-    Plain,
-    Saml20,
-    ScramSha1,
-    ScramSha1Plus,
-    ScramSha256,
-    ScramSha256Plus,
-    Securid,
-    Skey,
-    Spnego,
-    SpnegoPlus,
-    SxoverPlus,
-    Xoauth,
-    Xoauth2,
-    // Unknown
-    Unknown,
-}
+pub const AUTH_SCRAM_SHA_256_PLUS: u64 = 1u64 << 0;
+pub const AUTH_SCRAM_SHA_256: u64 = 1u64 << 1;
+pub const AUTH_SCRAM_SHA_1_PLUS: u64 = 1u64 << 2;
+pub const AUTH_SCRAM_SHA_1: u64 = 1u64 << 3;
+pub const AUTH_OAUTHBEARER: u64 = 1u64 << 4;
+pub const AUTH_XOAUTH: u64 = 1u64 << 5;
+pub const AUTH_XOAUTH2: u64 = 1u64 << 6;
+pub const AUTH_9798_M_DSA_SHA1: u64 = 1u64 << 7;
+pub const AUTH_9798_M_ECDSA_SHA1: u64 = 1u64 << 8;
+pub const AUTH_9798_M_RSA_SHA1_ENC: u64 = 1u64 << 9;
+pub const AUTH_9798_U_DSA_SHA1: u64 = 1u64 << 10;
+pub const AUTH_9798_U_ECDSA_SHA1: u64 = 1u64 << 11;
+pub const AUTH_9798_U_RSA_SHA1_ENC: u64 = 1u64 << 12;
+pub const AUTH_EAP_AES128: u64 = 1u64 << 13;
+pub const AUTH_EAP_AES128_PLUS: u64 = 1u64 << 14;
+pub const AUTH_ECDH_X25519_CHALLENGE: u64 = 1u64 << 15;
+pub const AUTH_ECDSA_NIST256P_CHALLENGE: u64 = 1u64 << 16;
+pub const AUTH_EXTERNAL: u64 = 1u64 << 17;
+pub const AUTH_GS2_KRB5: u64 = 1u64 << 18;
+pub const AUTH_GS2_KRB5_PLUS: u64 = 1u64 << 19;
+pub const AUTH_GSS_SPNEGO: u64 = 1u64 << 20;
+pub const AUTH_GSSAPI: u64 = 1u64 << 21;
+pub const AUTH_KERBEROS_V4: u64 = 1u64 << 22;
+pub const AUTH_KERBEROS_V5: u64 = 1u64 << 23;
+pub const AUTH_NMAS_SAMBA_AUTH: u64 = 1u64 << 24;
+pub const AUTH_NMAS_AUTHEN: u64 = 1u64 << 25;
+pub const AUTH_NMAS_LOGIN: u64 = 1u64 << 26;
+pub const AUTH_NTLM: u64 = 1u64 << 27;
+pub const AUTH_OAUTH10A: u64 = 1u64 << 28;
+pub const AUTH_OPENID20: u64 = 1u64 << 29;
+pub const AUTH_OTP: u64 = 1u64 << 30;
+pub const AUTH_SAML20: u64 = 1u64 << 31;
+pub const AUTH_SECURID: u64 = 1u64 << 32;
+pub const AUTH_SKEY: u64 = 1u64 << 33;
+pub const AUTH_SPNEGO: u64 = 1u64 << 34;
+pub const AUTH_SPNEGO_PLUS: u64 = 1u64 << 35;
+pub const AUTH_SXOVER_PLUS: u64 = 1u64 << 36;
+pub const AUTH_CRAM_MD5: u64 = 1u64 << 37;
+pub const AUTH_DIGEST_MD5: u64 = 1u64 << 38;
+pub const AUTH_LOGIN: u64 = 1u64 << 39;
+pub const AUTH_PLAIN: u64 = 1u64 << 40;
+pub const AUTH_ANONYMOUS: u64 = 1u64 << 41;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Capability {
     EightBitMime,
     Atrn,
     Auth {
-        mechanisms: Vec<Mechanism>,
+        mechanisms: u64,
     },
     BinaryMime,
     Burl,
@@ -219,6 +214,7 @@ pub enum MtPriority {
     Mixer,
     Stanag4406,
     Nsep,
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,6 +275,7 @@ impl IntoString for Vec<u8> {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
 
@@ -316,3 +313,4 @@ mod tests {
         }
     }
 }
+*/
