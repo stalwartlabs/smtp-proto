@@ -2,7 +2,7 @@ use std::slice::Iter;
 
 use crate::{
     request::{parser::Rfc5321Parser, receiver::ReceiverParser},
-    Capability, EhloResponse, Error, IntoString, MtPriority, Response, LF,
+    *,
 };
 
 use super::*;
@@ -296,75 +296,6 @@ impl Response<String> {
             esc,
             message: message.into_string(),
         })
-    }
-}
-
-impl Capability {
-    pub fn parse(value: &[u8]) -> Option<Capability> {
-        if value.eq_ignore_ascii_case(b"8BITMIME") {
-            Capability::EightBitMime.into()
-        } else if value.eq_ignore_ascii_case(b"ATRN") {
-            Capability::Atrn.into()
-        } else if value.eq_ignore_ascii_case(b"AUTH") {
-            Capability::Auth { mechanisms: 0 }.into()
-        } else if value.eq_ignore_ascii_case(b"BINARYMIME") {
-            Capability::BinaryMime.into()
-        } else if value.eq_ignore_ascii_case(b"BURL") {
-            Capability::Burl.into()
-        } else if value.eq_ignore_ascii_case(b"CHECKPOINT") {
-            Capability::Checkpoint.into()
-        } else if value.eq_ignore_ascii_case(b"CHUNKING") {
-            Capability::Chunking.into()
-        } else if value.eq_ignore_ascii_case(b"CONNEG") {
-            Capability::Conneg.into()
-        } else if value.eq_ignore_ascii_case(b"CONPERM") {
-            Capability::Conperm.into()
-        } else if value.eq_ignore_ascii_case(b"DELIVERBY") {
-            Capability::DeliverBy { min: 0 }.into()
-        } else if value.eq_ignore_ascii_case(b"DSN") {
-            Capability::Dsn.into()
-        } else if value.eq_ignore_ascii_case(b"ENHANCEDSTATUSCODES") {
-            Capability::EnhancedStatusCodes.into()
-        } else if value.eq_ignore_ascii_case(b"ETRN") {
-            Capability::Etrn.into()
-        } else if value.eq_ignore_ascii_case(b"EXPN") {
-            Capability::Expn.into()
-        } else if value.eq_ignore_ascii_case(b"FUTURERELEASE") {
-            Capability::FutureRelease {
-                max_interval: 0,
-                max_datetime: 0,
-            }
-            .into()
-        } else if value.eq_ignore_ascii_case(b"HELP") {
-            Capability::Help.into()
-        } else if value.eq_ignore_ascii_case(b"MT-PRIORITY") {
-            Capability::MtPriority {
-                priority: MtPriority::Mixer,
-            }
-            .into()
-        } else if value.eq_ignore_ascii_case(b"MTRK") {
-            Capability::Mtrk.into()
-        } else if value.eq_ignore_ascii_case(b"NO-SOLICITING") {
-            Capability::NoSoliciting { keywords: None }.into()
-        } else if value.eq_ignore_ascii_case(b"ONEX") {
-            Capability::Onex.into()
-        } else if value.eq_ignore_ascii_case(b"PIPELINING") {
-            Capability::Pipelining.into()
-        } else if value.eq_ignore_ascii_case(b"REQUIRETLS") {
-            Capability::RequireTls.into()
-        } else if value.eq_ignore_ascii_case(b"RRVS") {
-            Capability::Rrvs.into()
-        } else if value.eq_ignore_ascii_case(b"SIZE") {
-            Capability::Size { size: 0 }.into()
-        } else if value.eq_ignore_ascii_case(b"SMTPUTF8") {
-            Capability::SmtpUtf8.into()
-        } else if value.eq_ignore_ascii_case(b"STARTTLS") {
-            Capability::StartTls.into()
-        } else if value.eq_ignore_ascii_case(b"VERB") {
-            Capability::Verb.into()
-        } else {
-            None
-        }
     }
 }
 

@@ -6,6 +6,13 @@ use std::{
 use crate::*;
 
 impl<T: Display> EhloResponse<T> {
+    pub fn new(hostname: T) -> Self {
+        Self {
+            hostname,
+            capabilities: Vec::with_capacity(20),
+        }
+    }
+
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
         write!(writer, "250-{} says hello\r\n", self.hostname)?;
         let len = self.capabilities.len();
@@ -58,7 +65,6 @@ impl<T: Display> EhloResponse<T> {
                         MtPriority::Mixer => "MIXER",
                         MtPriority::Stanag4406 => "STANAG4406",
                         MtPriority::Nsep => "NSEP",
-                        MtPriority::None => "MIXER",
                     }
                 ),
                 Capability::Mtrk => write!(writer, "MTRK\r\n"),

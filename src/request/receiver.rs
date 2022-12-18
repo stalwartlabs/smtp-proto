@@ -12,15 +12,22 @@ pub trait ReceiverParser: Sized {
 }
 
 pub struct DataReceiver {
-    pub buf: Vec<u8>,
     crlf_dot: bool,
     last_ch: u8,
     prev_last_ch: u8,
 }
 
 pub struct BdatReceiver {
-    pub buf: Vec<u8>,
+    pub is_last: bool,
     bytes_left: usize,
+}
+
+pub struct DummyDataReceiver {
+    is_bdat: bool,
+    bdat_bytes_left: usize,
+    crlf_dot: bool,
+    last_ch: u8,
+    prev_last_ch: u8,
 }
 
 impl<T: ReceiverParser> Default for Receiver<T> {
@@ -60,28 +67,27 @@ impl DataReceiver {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            buf: Vec::with_capacity(1024),
             crlf_dot: false,
             last_ch: 0,
             prev_last_ch: 0,
         }
     }
 
-    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>) -> bool {
+    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>, buf: &mut Vec<u8>) -> bool {
         for &ch in bytes {
             match ch {
                 b'.' if self.last_ch == b'\n' && self.prev_last_ch == b'\r' => {
                     self.crlf_dot = true;
                 }
                 b'\n' if self.crlf_dot && self.last_ch == b'\r' => {
-                    self.buf.truncate(self.buf.len() - 3);
+                    buf.truncate(buf.len() - 3);
                     return true;
                 }
                 b'\r' => {
-                    self.buf.push(ch);
+                    buf.push(ch);
                 }
                 _ => {
-                    self.buf.push(ch);
+                    buf.push(ch);
                     self.crlf_dot = false;
                 }
             }
@@ -94,22 +100,78 @@ impl DataReceiver {
 }
 
 impl BdatReceiver {
-    pub fn new(bytes_left: usize) -> Self {
+    pub fn new(chunk_size: usize, is_last: bool) -> Self {
         Self {
-            buf: Vec::with_capacity(bytes_left),
-            bytes_left,
+            bytes_left: chunk_size,
+            is_last,
+        }
+    }
+
+    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>, buf: &mut Vec<u8>) -> bool {
+        while self.bytes_left > 0 {
+            if let Some(&ch) = bytes.next() {
+                buf.push(ch);
+                self.bytes_left -= 1;
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl DummyDataReceiver {
+    pub fn new_bdat(chunk_size: usize) -> Self {
+        Self {
+            bdat_bytes_left: chunk_size,
+            is_bdat: true,
+            crlf_dot: false,
+            last_ch: 0,
+            prev_last_ch: 0,
+        }
+    }
+
+    pub fn new_data(data: &DataReceiver) -> Self {
+        Self {
+            is_bdat: false,
+            bdat_bytes_left: 0,
+            crlf_dot: data.crlf_dot,
+            last_ch: data.last_ch,
+            prev_last_ch: data.prev_last_ch,
         }
     }
 
     pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>) -> bool {
-        for &ch in bytes {
-            self.buf.push(ch);
-            if self.buf.len() == self.bytes_left {
-                return true;
+        if !self.is_bdat {
+            for &ch in bytes {
+                match ch {
+                    b'.' if self.last_ch == b'\n' && self.prev_last_ch == b'\r' => {
+                        self.crlf_dot = true;
+                    }
+                    b'\n' if self.crlf_dot && self.last_ch == b'\r' => {
+                        return true;
+                    }
+                    b'\r' => {}
+                    _ => {
+                        self.crlf_dot = false;
+                    }
+                }
+                self.prev_last_ch = self.last_ch;
+                self.last_ch = ch;
             }
-        }
 
-        false
+            false
+        } else {
+            while self.bdat_bytes_left > 0 {
+                if bytes.next().is_some() {
+                    self.bdat_bytes_left -= 1;
+                } else {
+                    return false;
+                }
+            }
+
+            true
+        }
     }
 }
 
@@ -132,9 +194,10 @@ mod tests {
             ),
         ] {
             let mut r = DataReceiver::new();
+            let mut buf = Vec::new();
             for data in &data {
-                if r.ingest(&mut data.as_bytes().iter()) {
-                    assert_eq!(message, String::from_utf8(r.buf).unwrap());
+                if r.ingest(&mut data.as_bytes().iter(), &mut buf) {
+                    assert_eq!(message, String::from_utf8(buf).unwrap());
                     continue 'outer;
                 }
             }

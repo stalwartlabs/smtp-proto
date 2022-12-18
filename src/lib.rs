@@ -209,12 +209,11 @@ pub enum Capability {
     Verb,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MtPriority {
     Mixer,
     Stanag4406,
     Nsep,
-    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,7 +253,8 @@ pub enum Category {
 pub enum Error {
     NeedsMoreData { bytes_left: usize },
     UnknownCommand,
-    InvalidAddress,
+    InvalidSenderAddress,
+    InvalidRecipientAddress,
     SyntaxError { syntax: &'static str },
     InvalidParameter { param: &'static str },
     UnsupportedParameter { param: String },

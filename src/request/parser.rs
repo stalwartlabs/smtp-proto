@@ -28,7 +28,7 @@ impl ReceiverParser for Request<String> {
                         }
                     } else {
                         parser.seek_lf()?;
-                        return Err(Error::InvalidAddress);
+                        return Err(Error::InvalidRecipientAddress);
                     }
                 }
                 parser.seek_lf()?;
@@ -51,7 +51,7 @@ impl ReceiverParser for Request<String> {
                         }
                     } else {
                         parser.seek_lf()?;
-                        return Err(Error::InvalidAddress);
+                        return Err(Error::InvalidSenderAddress);
                     }
                 }
 
@@ -1479,26 +1479,29 @@ mod tests {
                     parameters: vec![],
                 }),
             ),
-            ("MAIL FROM:<@invalid>", Err(Error::InvalidAddress)),
-            ("MAIL FROM:<hi@@invalid.org>", Err(Error::InvalidAddress)),
+            ("MAIL FROM:<@invalid>", Err(Error::InvalidSenderAddress)),
+            (
+                "MAIL FROM:<hi@@invalid.org>",
+                Err(Error::InvalidSenderAddress),
+            ),
             (
                 "MAIL FROM:<hi..there@invalid.org>",
-                Err(Error::InvalidAddress),
+                Err(Error::InvalidSenderAddress),
             ),
             (
                 "MAIL FROM:<hi.there@invalid..org>",
-                Err(Error::InvalidAddress),
+                Err(Error::InvalidSenderAddress),
             ),
             (
                 "MAIL FROM:<hi.there@.invalid.org>",
-                Err(Error::InvalidAddress),
+                Err(Error::InvalidSenderAddress),
             ),
             (
                 "MAIL FROM:<.hi.there@invalid.org>",
-                Err(Error::InvalidAddress),
+                Err(Error::InvalidSenderAddress),
             ),
-            ("MAIL FROM:<@>", Err(Error::InvalidAddress)),
-            ("MAIL FROM:<.@.>", Err(Error::InvalidAddress)),
+            ("MAIL FROM:<@>", Err(Error::InvalidSenderAddress)),
+            ("MAIL FROM:<.@.>", Err(Error::InvalidSenderAddress)),
             (
                 "RCPT TO:<孫子@áéíóú.org>",
                 Ok(Request::Rcpt {
