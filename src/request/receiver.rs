@@ -1,14 +1,12 @@
-use std::{marker::PhantomData, slice::Iter};
+use std::slice::Iter;
 
-use crate::Error;
+use crate::{Error, Request};
 
-pub struct Receiver<T: ReceiverParser + Sized> {
+const MAX_LINE_LENGTH: usize = 2048;
+
+#[derive(Default)]
+pub struct RequestReceiver {
     pub buf: Vec<u8>,
-    _p: PhantomData<T>,
-}
-
-pub trait ReceiverParser: Sized {
-    fn parse(bytes: &mut Iter<'_, u8>) -> Result<Self, Error>;
 }
 
 pub struct DataReceiver {
@@ -30,21 +28,24 @@ pub struct DummyDataReceiver {
     prev_last_ch: u8,
 }
 
-impl<T: ReceiverParser> Default for Receiver<T> {
-    fn default() -> Self {
-        Self {
-            buf: Vec::with_capacity(0),
-            _p: Default::default(),
-        }
-    }
-}
+pub struct DummyLineReceiver {}
 
-impl<T: ReceiverParser> Receiver<T> {
-    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>, buf: &[u8]) -> Result<T, Error> {
+impl RequestReceiver {
+    pub fn ingest(
+        &mut self,
+        bytes: &mut Iter<'_, u8>,
+        buf: &[u8],
+    ) -> Result<Request<String>, Error> {
         if self.buf.is_empty() {
-            match T::parse(bytes) {
-                Err(Error::NeedsMoreData { bytes_left }) if bytes_left > 0 => {
-                    self.buf = buf[buf.len() - bytes_left..].to_vec();
+            match Request::parse(bytes) {
+                Err(Error::NeedsMoreData { bytes_left }) => {
+                    if bytes_left > 0 {
+                        if bytes_left < MAX_LINE_LENGTH {
+                            self.buf = buf[buf.len() - bytes_left..].to_vec();
+                        } else {
+                            return Err(Error::LineTooLong);
+                        }
+                    }
                 }
                 result => return result,
             }
@@ -52,9 +53,12 @@ impl<T: ReceiverParser> Receiver<T> {
             for &ch in bytes {
                 self.buf.push(ch);
                 if ch == b'\n' {
-                    let result = T::parse(&mut self.buf.iter());
+                    let result = Request::parse(&mut self.buf.iter());
                     self.buf.clear();
                     return result;
+                } else if self.buf.len() == MAX_LINE_LENGTH {
+                    self.buf.clear();
+                    return Err(Error::LineTooLong);
                 }
             }
         }
@@ -175,9 +179,20 @@ impl DummyDataReceiver {
     }
 }
 
+impl DummyLineReceiver {
+    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>) -> bool {
+        for &ch in bytes {
+            if ch == b'\n' {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{request::receiver::Receiver, Error, Request};
+    use crate::{request::receiver::RequestReceiver, Error, Request};
 
     use super::DataReceiver;
 
@@ -237,7 +252,7 @@ mod tests {
             ),
         ] {
             let mut requests = Vec::new();
-            let mut r = Receiver::default();
+            let mut r = RequestReceiver::default();
             for data in &data {
                 let mut bytes = data.as_bytes().iter();
                 loop {

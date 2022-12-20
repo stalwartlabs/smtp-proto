@@ -9,86 +9,95 @@ impl<T: Display> EhloResponse<T> {
     pub fn new(hostname: T) -> Self {
         Self {
             hostname,
-            capabilities: Vec::with_capacity(20),
+            capabilities: 0,
+            auth_mechanisms: 0,
+            deliver_by: 0,
+            future_release_interval: 0,
+            future_release_datetime: 0,
+            mt_priority: MtPriority::Mixer,
+            no_soliciting: None,
+            size: 0,
         }
     }
 
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
         write!(writer, "250-{} says hello\r\n", self.hostname)?;
-        let len = self.capabilities.len();
-        for (pos, capability) in self.capabilities.iter().enumerate() {
+        let mut capabilities = self.capabilities;
+
+        while capabilities != 0 {
+            let capability = 63 - capabilities.leading_zeros();
+            capabilities ^= 1 << capability;
+
             writer.write_all(b"250")?;
-            writer.write_all(if pos < len - 1 { b"-" } else { b" " })?;
+            writer.write_all(if capabilities != 0 { b"-" } else { b" " })?;
             match capability {
-                Capability::EightBitMime => write!(writer, "8BITMIME\r\n"),
-                Capability::Atrn => write!(writer, "ATRN\r\n"),
-                Capability::Auth { mechanisms } => {
+                EXT_8BIT_MIME => write!(writer, "8BITMIME\r\n"),
+                EXT_ATRN => write!(writer, "ATRN\r\n"),
+                EXT_AUTH => {
                     writer.write_all(b"AUTH")?;
-                    let mut mechanisms = *mechanisms;
+                    let mut mechanisms = self.auth_mechanisms;
                     while mechanisms != 0 {
                         let item = 63 - mechanisms.leading_zeros();
                         mechanisms ^= 1 << item;
-                        write!(writer, " {}", (item as u64).as_mechanism())?;
+                        write!(writer, " {}", (item as u64).to_mechanism())?;
                     }
                     writer.write_all(b"\r\n")
                 }
-                Capability::BinaryMime => write!(writer, "BINARYMIME\r\n"),
-                Capability::Burl => write!(writer, "BURL\r\n"),
-                Capability::Checkpoint => write!(writer, "CHECKPOINT\r\n"),
-                Capability::Chunking => write!(writer, "CHUNKING\r\n"),
-                Capability::Conneg => write!(writer, "CONNEG\r\n"),
-                Capability::Conperm => write!(writer, "CONPERM\r\n"),
-                Capability::DeliverBy { min } => {
-                    if *min > 0 {
-                        write!(writer, "DELIVERBY {}\r\n", min)
+                EXT_BINARY_MIME => write!(writer, "BINARYMIME\r\n"),
+                EXT_BURL => write!(writer, "BURL\r\n"),
+                EXT_CHECKPOINT => write!(writer, "CHECKPOINT\r\n"),
+                EXT_CHUNKING => write!(writer, "CHUNKING\r\n"),
+                EXT_CONNEG => write!(writer, "CONNEG\r\n"),
+                EXT_CONPERM => write!(writer, "CONPERM\r\n"),
+                EXT_DELIVER_BY => {
+                    if self.deliver_by > 0 {
+                        write!(writer, "DELIVERBY {}\r\n", self.deliver_by)
                     } else {
                         write!(writer, "DELIVERBY\r\n")
                     }
                 }
-                Capability::Dsn => write!(writer, "DSN\r\n"),
-                Capability::EnhancedStatusCodes => write!(writer, "ENHANCEDSTATUSCODES\r\n"),
-                Capability::Etrn => write!(writer, "ETRN\r\n"),
-                Capability::Expn => write!(writer, "EXPN\r\n"),
-                Capability::FutureRelease {
-                    max_interval,
-                    max_datetime,
-                } => write!(
+                EXT_DSN => write!(writer, "DSN\r\n"),
+                EXT_ENHANCED_STATUS_CODES => write!(writer, "ENHANCEDSTATUSCODES\r\n"),
+                EXT_ETRN => write!(writer, "ETRN\r\n"),
+                EXT_EXPN => write!(writer, "EXPN\r\n"),
+                EXT_FUTURE_RELEASE => write!(
                     writer,
                     "FUTURERELEASE {} {}\r\n",
-                    max_interval, max_datetime
+                    self.future_release_interval, self.future_release_datetime
                 ),
-                Capability::Help => write!(writer, "HELP\r\n"),
-                Capability::MtPriority { priority } => write!(
+                EXT_HELP => write!(writer, "HELP\r\n"),
+                EXT_MT_PRIORITY => write!(
                     writer,
                     "MT-PRIORITY {}\r\n",
-                    match priority {
+                    match self.mt_priority {
                         MtPriority::Mixer => "MIXER",
                         MtPriority::Stanag4406 => "STANAG4406",
                         MtPriority::Nsep => "NSEP",
                     }
                 ),
-                Capability::Mtrk => write!(writer, "MTRK\r\n"),
-                Capability::NoSoliciting { keywords } => {
-                    if let Some(keywords) = keywords {
+                EXT_MTRK => write!(writer, "MTRK\r\n"),
+                EXT_NO_SOLICITING => {
+                    if let Some(keywords) = &self.no_soliciting {
                         write!(writer, "NO-SOLICITING {}\r\n", keywords)
                     } else {
                         write!(writer, "NO-SOLICITING\r\n")
                     }
                 }
-                Capability::Onex => write!(writer, "ONEX\r\n"),
-                Capability::Pipelining => write!(writer, "PIPELINING\r\n"),
-                Capability::RequireTls => write!(writer, "REQUIRETLS\r\n"),
-                Capability::Rrvs => write!(writer, "RRVS\r\n"),
-                Capability::Size { size } => {
-                    if *size > 0 {
-                        write!(writer, "SIZE {}\r\n", size)
+                EXT_ONEX => write!(writer, "ONEX\r\n"),
+                EXT_PIPELINING => write!(writer, "PIPELINING\r\n"),
+                EXT_REQUIRE_TLS => write!(writer, "REQUIRETLS\r\n"),
+                EXT_RRVS => write!(writer, "RRVS\r\n"),
+                EXT_SIZE => {
+                    if self.size > 0 {
+                        write!(writer, "SIZE {}\r\n", self.size)
                     } else {
                         write!(writer, "SIZE\r\n")
                     }
                 }
-                Capability::SmtpUtf8 => write!(writer, "SMTPUTF8\r\n"),
-                Capability::StartTls => write!(writer, "STARTTLS\r\n"),
-                Capability::Verb => write!(writer, "VERB\r\n"),
+                EXT_SMTP_UTF8 => write!(writer, "SMTPUTF8\r\n"),
+                EXT_START_TLS => write!(writer, "STARTTLS\r\n"),
+                EXT_VERB => write!(writer, "VERB\r\n"),
+                _ => write!(writer, ""),
             }?;
         }
 
@@ -112,12 +121,12 @@ impl<T: Display> Response<T> {
     }
 }
 
-trait AsMechanism {
-    fn as_mechanism(&self) -> &'static str;
+pub trait BitToString {
+    fn to_mechanism(&self) -> &'static str;
 }
 
-impl AsMechanism for u64 {
-    fn as_mechanism(&self) -> &'static str {
+impl BitToString for u64 {
+    fn to_mechanism(&self) -> &'static str {
         match *self {
             AUTH_SCRAM_SHA_256_PLUS => "SCRAM-SHA-256-PLUS",
             AUTH_SCRAM_SHA_256 => "SCRAM-SHA-256",
@@ -187,7 +196,7 @@ impl<T: Display> Response<T> {
 
     /// Returns the status severity (first digit of the status code).
     pub fn severity(&self) -> Severity {
-        match self.code[0] / 100 {
+        match self.code[0] {
             2 => Severity::PositiveCompletion,
             3 => Severity::PositiveIntermediate,
             4 => Severity::TransientNegativeCompletion,

@@ -1,3 +1,7 @@
+use std::fmt::Display;
+
+use crate::{EhloResponse, Response};
+
 pub mod generate;
 pub mod parser;
 
@@ -190,3 +194,41 @@ pub(crate) const STANAG4406: u128 = (b'S' as u128)
     | (b'6' as u128) << 72;
 pub(crate) const NSEP: u128 =
     (b'N' as u128) | (b'S' as u128) << 8 | (b'E' as u128) << 16 | (b'P' as u128) << 24;
+
+impl<T: Display> EhloResponse<T> {
+    /// Returns the hostname of the SMTP server.
+    pub fn hostname(&self) -> &T {
+        &self.hostname
+    }
+
+    /// Returns the capabilities of the SMTP server.
+    pub fn capabilities(&self) -> u32 {
+        self.capabilities
+    }
+
+    /// Returns `true` if the SMTP server supports a given extension.
+    pub fn has_capability(&self, capability: u32) -> bool {
+        (self.capabilities & capability) != 0
+    }
+
+    /// Returns all supported authentication mechanisms.
+    pub fn auth(&self) -> u64 {
+        self.auth_mechanisms
+    }
+}
+
+impl<T: Display> Display for Response<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Code: {}{}{}, Enhanced code: {}.{}.{}, Message: {}",
+            self.code[0],
+            self.code[1],
+            self.code[2],
+            self.esc[0],
+            self.esc[1],
+            self.esc[2],
+            self.message,
+        )
+    }
+}

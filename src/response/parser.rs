@@ -1,24 +1,124 @@
 use std::slice::Iter;
 
-use crate::{
-    request::{parser::Rfc5321Parser, receiver::ReceiverParser},
-    *,
-};
+use crate::{request::parser::Rfc5321Parser, *};
 
 use super::*;
 
-impl ReceiverParser for EhloResponse<String> {
-    fn parse(bytes: &mut Iter<'_, u8>) -> Result<EhloResponse<String>, Error> {
+pub const MAX_REPONSE_LENGTH: usize = 4096;
+
+#[derive(Default)]
+pub struct ResponseReceiver {
+    buf: Vec<u8>,
+    code: [u8; 6],
+    is_last: bool,
+    pos: usize,
+}
+
+impl ResponseReceiver {
+    pub fn from_code(code: [u8; 3]) -> Self {
+        Self {
+            code: [code[0], code[1], code[2], 0, 0, 0],
+            pos: 3,
+            is_last: false,
+            buf: Vec::new(),
+        }
+    }
+
+    pub fn parse(&mut self, bytes: &mut Iter<'_, u8>) -> Result<Response<String>, Error> {
+        for &ch in bytes {
+            match self.pos {
+                0..=2 => {
+                    if ch.is_ascii_digit() {
+                        if self.buf.is_empty() {
+                            self.code[self.pos] = ch - b'0';
+                        }
+                        self.pos += 1;
+                    } else {
+                        return Err(Error::SyntaxError {
+                            syntax: "Invalid response code",
+                        });
+                    }
+                }
+                3 => match ch {
+                    b' ' => {
+                        self.is_last = true;
+                        self.pos += 1;
+                    }
+                    b'-' => {
+                        self.pos += 1;
+                    }
+                    b'\r' => {
+                        continue;
+                    }
+                    b'\n' => {
+                        self.is_last = true;
+                    }
+                    _ => {
+                        return Err(Error::SyntaxError {
+                            syntax: "Invalid response separator",
+                        });
+                    }
+                },
+                4 | 5 | 6 => match ch {
+                    b'0'..=b'9' => {
+                        if self.buf.is_empty() {
+                            let code = &mut self.code[self.pos - 1];
+                            *code = code.saturating_mul(10).saturating_add(ch - b'0');
+                        }
+                    }
+                    b'.' if self.pos < 6 && self.code[self.pos - 1] > 0 => {
+                        self.pos += 1;
+                    }
+                    _ => {
+                        if !ch.is_ascii_whitespace() {
+                            self.buf.push(ch);
+                        }
+                        self.pos = 7;
+                    }
+                },
+                _ => match ch {
+                    b'\r' | b'\n' => (),
+                    _ => {
+                        if self.buf.len() < MAX_REPONSE_LENGTH {
+                            self.buf.push(ch);
+                        } else {
+                            return Err(Error::ResponseTooLong);
+                        }
+                    }
+                },
+            }
+
+            if ch == b'\n' {
+                if self.is_last {
+                    return Ok(Response {
+                        code: [self.code[0], self.code[1], self.code[2]],
+                        esc: [self.code[3], self.code[4], self.code[5]],
+                        message: std::mem::take(&mut self.buf).into_string(),
+                    });
+                } else {
+                    self.buf.push(b'\n');
+                    self.pos = 0;
+                }
+            }
+        }
+
+        Err(Error::NeedsMoreData { bytes_left: 0 })
+    }
+
+    pub fn reset(&mut self) {
+        self.is_last = false;
+        self.code.fill(0);
+        self.pos = 0;
+    }
+}
+
+impl EhloResponse<String> {
+    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Self, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
-        let mut response = EhloResponse {
-            hostname: String::new(),
-            capabilities: Vec::new(),
-        };
-        let mut eol = false;
-        let mut buf = Vec::with_capacity(32);
+        let mut response = EhloResponse::default();
         let mut code = [0u8; 3];
+        let mut eol = false;
         let mut is_first_line = true;
-        let mut did_success = false;
 
         while !eol {
             for code in code.iter_mut() {
@@ -33,6 +133,11 @@ impl ReceiverParser for EhloResponse<String> {
                     }
                 }
             }
+
+            if code[0] != 2 || code[1] != 5 || code[2] != 0 {
+                return Err(Error::InvalidResponse { code });
+            }
+
             match parser.read_char()? {
                 b' ' => {
                     eol = true;
@@ -48,263 +153,153 @@ impl ReceiverParser for EhloResponse<String> {
                 }
             }
 
-            did_success = code[0] == 2 && code[1] == 5 && code[2] == 0;
-
-            if !is_first_line && did_success {
-                response
-                    .capabilities
-                    .push(match parser.hashed_value_long()? {
-                        _8BITMIME => Capability::EightBitMime,
-                        ATRN => Capability::Atrn,
-                        AUTH => {
-                            let mut mechanisms = 0;
-                            while parser.stop_char != LF {
-                                if let Some(mechanism) = parser.mechanism()? {
-                                    mechanisms |= mechanism;
-                                }
-                            }
-
-                            Capability::Auth { mechanisms }
-                        }
-                        BINARYMIME => Capability::BinaryMime,
-                        BURL => Capability::Burl,
-                        CHECKPOINT => Capability::Checkpoint,
-                        CHUNKING => Capability::Chunking,
-                        CONNEG => Capability::Conneg,
-                        CONPERM => Capability::Conperm,
-                        DELIVERBY => Capability::DeliverBy {
-                            min: if parser.stop_char != LF {
-                                let db = parser.size()?;
-                                if db != usize::MAX {
-                                    db as u64
-                                } else {
-                                    0
-                                }
-                            } else {
-                                0
-                            },
-                        },
-                        DSN => Capability::Dsn,
-                        ENHANCEDSTATUSCO
-                            if parser.stop_char.to_ascii_uppercase() == b'D'
-                                && parser.read_char()?.to_ascii_uppercase() == b'E'
-                                && parser.read_char()?.to_ascii_uppercase() == b'S' =>
-                        {
-                            Capability::EnhancedStatusCodes
-                        }
-                        ETRN => Capability::Etrn,
-                        EXPN => Capability::Expn,
-                        FUTURERELEASE => {
-                            let max_interval = if parser.stop_char != LF {
-                                parser.size()?
-                            } else {
-                                0
-                            };
-                            let max_datetime = if parser.stop_char != LF {
-                                parser.size()?
-                            } else {
-                                0
-                            };
-
-                            Capability::FutureRelease {
-                                max_interval: if max_interval != usize::MAX {
-                                    max_interval as u64
-                                } else {
-                                    0
-                                },
-                                max_datetime: if max_datetime != usize::MAX {
-                                    max_datetime as u64
-                                } else {
-                                    0
-                                },
+            if !is_first_line {
+                response.capabilities |= match parser.hashed_value_long()? {
+                    _8BITMIME => EXT_8BIT_MIME,
+                    ATRN => EXT_ATRN,
+                    AUTH => {
+                        while parser.stop_char != LF {
+                            if let Some(mechanism) = parser.mechanism()? {
+                                response.auth_mechanisms |= mechanism;
                             }
                         }
-                        HELP => Capability::Help,
-                        MT_PRIORITY => Capability::MtPriority {
-                            priority: if parser.stop_char != LF {
-                                match parser.hashed_value_long()? {
-                                    MIXER => MtPriority::Mixer,
-                                    STANAG4406 => MtPriority::Stanag4406,
-                                    NSEP => MtPriority::Nsep,
-                                    _ => MtPriority::Mixer,
-                                }
+
+                        EXT_AUTH
+                    }
+                    BINARYMIME => EXT_BINARY_MIME,
+                    BURL => EXT_BURL,
+                    CHECKPOINT => EXT_CHECKPOINT,
+                    CHUNKING => EXT_CHUNKING,
+                    CONNEG => EXT_CONNEG,
+                    CONPERM => EXT_CONPERM,
+                    DELIVERBY => {
+                        response.deliver_by = if parser.stop_char != LF {
+                            let db = parser.size()?;
+                            if db != usize::MAX {
+                                db as u64
                             } else {
-                                MtPriority::Mixer
-                            },
-                        },
-                        MTRK => Capability::Mtrk,
-                        NO_SOLICITING => Capability::NoSoliciting {
-                            keywords: if parser.stop_char != LF {
-                                let text = parser.text()?;
-                                if !text.is_empty() {
-                                    text.into()
-                                } else {
-                                    None
-                                }
+                                0
+                            }
+                        } else {
+                            0
+                        };
+                        EXT_DELIVER_BY
+                    }
+                    DSN => EXT_DSN,
+                    ENHANCEDSTATUSCO
+                        if parser.stop_char.to_ascii_uppercase() == b'D'
+                            && parser.read_char()?.to_ascii_uppercase() == b'E'
+                            && parser.read_char()?.to_ascii_uppercase() == b'S' =>
+                    {
+                        EXT_ENHANCED_STATUS_CODES
+                    }
+                    ETRN => EXT_ETRN,
+                    EXPN => EXT_EXPN,
+                    FUTURERELEASE => {
+                        let max_interval = if parser.stop_char != LF {
+                            parser.size()?
+                        } else {
+                            0
+                        };
+                        let max_datetime = if parser.stop_char != LF {
+                            parser.size()?
+                        } else {
+                            0
+                        };
+
+                        response.future_release_interval = if max_interval != usize::MAX {
+                            max_interval as u64
+                        } else {
+                            0
+                        };
+                        response.future_release_datetime = if max_datetime != usize::MAX {
+                            max_datetime as u64
+                        } else {
+                            0
+                        };
+                        EXT_FUTURE_RELEASE
+                    }
+                    HELP => EXT_HELP,
+                    MT_PRIORITY => {
+                        response.mt_priority = if parser.stop_char != LF {
+                            match parser.hashed_value_long()? {
+                                MIXER => MtPriority::Mixer,
+                                STANAG4406 => MtPriority::Stanag4406,
+                                NSEP => MtPriority::Nsep,
+                                _ => MtPriority::Mixer,
+                            }
+                        } else {
+                            MtPriority::Mixer
+                        };
+                        EXT_MT_PRIORITY
+                    }
+                    MTRK => EXT_MTRK,
+                    NO_SOLICITING => {
+                        response.no_soliciting = if parser.stop_char != LF {
+                            let text = parser.text()?;
+                            if !text.is_empty() {
+                                text.into()
                             } else {
                                 None
-                            },
-                        },
-                        ONEX => Capability::Onex,
-                        PIPELINING => Capability::Pipelining,
-                        REQUIRETLS => Capability::RequireTls,
-                        RRVS => Capability::Rrvs,
-                        SIZE => Capability::Size {
-                            size: if parser.stop_char != LF {
-                                let size = parser.size()?;
-                                if size != usize::MAX {
-                                    size
-                                } else {
-                                    0
-                                }
+                            }
+                        } else {
+                            None
+                        };
+                        EXT_NO_SOLICITING
+                    }
+                    ONEX => EXT_ONEX,
+                    PIPELINING => EXT_PIPELINING,
+                    REQUIRETLS => EXT_REQUIRE_TLS,
+                    RRVS => EXT_RRVS,
+                    SIZE => {
+                        response.size = if parser.stop_char != LF {
+                            let size = parser.size()?;
+                            if size != usize::MAX {
+                                size
                             } else {
                                 0
-                            },
-                        },
-                        SMTPUTF8 => Capability::SmtpUtf8,
-                        STARTTLS => Capability::StartTls,
-                        VERB => Capability::Verb,
-                        _ => {
-                            parser.seek_lf()?;
-                            continue;
-                        }
-                    });
+                            }
+                        } else {
+                            0
+                        };
+                        EXT_SIZE
+                    }
+                    SMTPUTF8 => EXT_SMTP_UTF8,
+                    STARTTLS => EXT_START_TLS,
+                    VERB => EXT_VERB,
+                    _ => 0,
+                };
                 parser.seek_lf()?;
             } else {
-                if is_first_line {
-                    is_first_line = false;
-                } else if !buf.is_empty() {
-                    buf.extend_from_slice(b"\r\n");
-                }
-
+                let mut buf = Vec::with_capacity(16);
                 loop {
                     match parser.read_char()? {
                         b'\n' => break,
                         b'\r' => (),
-                        b' ' if did_success => {
+                        b' ' => {
                             parser.seek_lf()?;
                             break;
                         }
-                        ch => {
+                        ch if buf.len() < MAX_REPONSE_LENGTH => {
                             buf.push(ch);
                         }
+                        _ => return Err(Error::ResponseTooLong),
                     }
                 }
-
-                if did_success {
-                    response.hostname = buf.into_string();
-                    buf = Vec::new();
-                }
+                is_first_line = false;
+                response.hostname = buf.into_string();
             }
         }
 
-        if did_success {
-            Ok(response)
-        } else {
-            Err(Error::InvalidResponse {
-                response: Response {
-                    code,
-                    esc: [0, 0, 0],
-                    message: buf.into_string(),
-                },
-            })
-        }
-    }
-}
-
-impl Response<String> {
-    pub fn parse(bytes: &mut Iter<'_, u8>, has_esc: bool) -> Result<Response<String>, Error> {
-        let mut parser = Rfc5321Parser::new(bytes);
-        let mut code = [0u8; 3];
-        let mut message = Vec::with_capacity(32);
-        let mut esc = [0u8; 3];
-        let mut eol = false;
-
-        'outer: while !eol {
-            for code in code.iter_mut() {
-                match parser.read_char()? {
-                    ch @ b'0'..=b'9' => {
-                        *code = ch - b'0';
-                    }
-                    _ => {
-                        return Err(Error::SyntaxError {
-                            syntax: "unexpected token",
-                        })
-                    }
-                }
-            }
-            match parser.read_char()? {
-                b' ' => {
-                    eol = true;
-                }
-                b'-' => (),
-                b'\n' if code[0] < 6 => {
-                    break;
-                }
-                _ => {
-                    return Err(Error::SyntaxError {
-                        syntax: "unexpected token",
-                    });
-                }
-            }
-
-            let mut esc_parse_error = 0;
-            if has_esc {
-                if esc[0] == 0 {
-                    for (pos, esc) in esc.iter_mut().enumerate() {
-                        let val = parser.size()?;
-                        *esc = if val < 100 { val as u8 } else { 0 };
-                        if pos < 2 && parser.stop_char != b'.' {
-                            esc_parse_error = parser.stop_char;
-                            break;
-                        }
-                    }
-                    if parser.stop_char == LF {
-                        continue;
-                    }
-                } else {
-                    loop {
-                        match parser.read_char()? {
-                            b'0'..=b'9' | b'.' => (),
-                            b'\n' => continue 'outer,
-                            _ => break,
-                        }
-                    }
-                }
-            }
-
-            if !message.is_empty() && !matches!(message.last(), Some(b' ')) {
-                message.push(b' ');
-            }
-            if esc_parse_error != 0 {
-                message.push(esc_parse_error);
-            }
-
-            loop {
-                match parser.read_char()? {
-                    b'\n' => break,
-                    b'\r' => (),
-                    ch => {
-                        message.push(ch);
-                    }
-                }
-            }
-        }
-
-        Ok(Response {
-            code,
-            esc,
-            message: message.into_string(),
-        })
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        request::receiver::ReceiverParser, Capability, EhloResponse, Error, MtPriority, Response,
-        AUTH_DIGEST_MD5, AUTH_GSSAPI, AUTH_PLAIN,
-    };
+    use crate::*;
+
+    use super::ResponseReceiver;
 
     #[test]
     fn parse_ehlo() {
@@ -322,97 +317,106 @@ mod tests {
                     "250-CONNEG\n",
                     "250-CONPERM\n",
                     "250-DELIVERBY\n",
-                    "250-DELIVERBY 240\n",
                     "250-DSN\n",
                     "250-ENHANCEDSTATUSCODES\n",
                     "250-ETRN\n",
                     "250-EXPN\n",
                     "250-FUTURERELEASE 1234 5678\n",
-                    "250-FUTURERELEASE 123\n",
-                    "250-FUTURERELEASE\n",
                     "250-HELP\n",
                     "250-MT-PRIORITY\n",
-                    "250-MT-PRIORITY MIXER\n",
-                    "250-MT-PRIORITY STANAG4406\n",
                     "250-MTRK\n",
                     "250-NO-SOLICITING net.example:ADV\n",
-                    "250-NO-SOLICITING\n",
                     "250-PIPELINING\n",
                     "250-REQUIRETLS\n",
                     "250-RRVS\n",
                     "250-SIZE 1000000\n",
-                    "250-SIZE\n",
                     "250-SMTPUTF8 ignore\n",
-                    "250-SMTPUTF8\n",
                     "250 STARTTLS\n",
                 ),
                 Ok(EhloResponse {
                     hostname: "dbc.mtview.ca.us".to_string(),
-                    capabilities: vec![
-                        Capability::EightBitMime,
-                        Capability::Atrn,
-                        Capability::Auth {
-                            mechanisms: AUTH_GSSAPI | AUTH_DIGEST_MD5 | AUTH_PLAIN,
-                        },
-                        Capability::BinaryMime,
-                        Capability::Burl,
-                        Capability::Checkpoint,
-                        Capability::Chunking,
-                        Capability::Conneg,
-                        Capability::Conperm,
-                        Capability::DeliverBy { min: 0 },
-                        Capability::DeliverBy { min: 240 },
-                        Capability::Dsn,
-                        Capability::EnhancedStatusCodes,
-                        Capability::Etrn,
-                        Capability::Expn,
-                        Capability::FutureRelease {
-                            max_interval: 1234,
-                            max_datetime: 5678,
-                        },
-                        Capability::FutureRelease {
-                            max_interval: 123,
-                            max_datetime: 0,
-                        },
-                        Capability::FutureRelease {
-                            max_interval: 0,
-                            max_datetime: 0,
-                        },
-                        Capability::Help,
-                        Capability::MtPriority {
-                            priority: MtPriority::Mixer,
-                        },
-                        Capability::MtPriority {
-                            priority: MtPriority::Mixer,
-                        },
-                        Capability::MtPriority {
-                            priority: MtPriority::Stanag4406,
-                        },
-                        Capability::Mtrk,
-                        Capability::NoSoliciting {
-                            keywords: Some("net.example:ADV".to_string()),
-                        },
-                        Capability::NoSoliciting { keywords: None },
-                        Capability::Pipelining,
-                        Capability::RequireTls,
-                        Capability::Rrvs,
-                        Capability::Size { size: 1000000 },
-                        Capability::Size { size: 0 },
-                        Capability::SmtpUtf8,
-                        Capability::SmtpUtf8,
-                        Capability::StartTls,
-                    ],
+                    capabilities: EXT_8BIT_MIME
+                        | EXT_ATRN
+                        | EXT_AUTH
+                        | EXT_BINARY_MIME
+                        | EXT_BURL
+                        | EXT_CHECKPOINT
+                        | EXT_CHUNKING
+                        | EXT_CONNEG
+                        | EXT_CONPERM
+                        | EXT_DELIVER_BY
+                        | EXT_DSN
+                        | EXT_ENHANCED_STATUS_CODES
+                        | EXT_ETRN
+                        | EXT_EXPN
+                        | EXT_FUTURE_RELEASE
+                        | EXT_HELP
+                        | EXT_MT_PRIORITY
+                        | EXT_MTRK
+                        | EXT_NO_SOLICITING
+                        | EXT_PIPELINING
+                        | EXT_REQUIRE_TLS
+                        | EXT_RRVS
+                        | EXT_SIZE
+                        | EXT_SMTP_UTF8
+                        | EXT_START_TLS,
+                    auth_mechanisms: AUTH_GSSAPI | AUTH_DIGEST_MD5 | AUTH_PLAIN,
+                    deliver_by: 0,
+                    future_release_interval: 1234,
+                    future_release_datetime: 5678,
+                    mt_priority: MtPriority::Mixer,
+                    no_soliciting: Some("net.example:ADV".to_string()),
+                    size: 1000000,
+                }),
+            ),
+            (
+                concat!(
+                    "250-\n",
+                    "250-DELIVERBY 240\n",
+                    "250-FUTURERELEASE 123\n",
+                    "250-MT-PRIORITY MIXER\n",
+                    "250-NO-SOLICITING\n",
+                    "250-SIZE\n",
+                    "250 SMTPUTF8\n",
+                ),
+                Ok(EhloResponse {
+                    hostname: "".to_string(),
+                    capabilities: EXT_DELIVER_BY
+                        | EXT_FUTURE_RELEASE
+                        | EXT_MT_PRIORITY
+                        | EXT_NO_SOLICITING
+                        | EXT_SIZE
+                        | EXT_SMTP_UTF8,
+                    auth_mechanisms: 0,
+                    deliver_by: 240,
+                    future_release_interval: 123,
+                    future_release_datetime: 0,
+                    mt_priority: MtPriority::Mixer,
+                    no_soliciting: None,
+                    size: 0,
+                }),
+            ),
+            (
+                concat!(
+                    "250-dbc.mtview.ca.us says hello\n",
+                    "250-FUTURERELEASE\n",
+                    "250 MT-PRIORITY STANAG4406\n",
+                ),
+                Ok(EhloResponse {
+                    hostname: "dbc.mtview.ca.us".to_string(),
+                    capabilities: EXT_FUTURE_RELEASE | EXT_MT_PRIORITY,
+                    auth_mechanisms: 0,
+                    deliver_by: 0,
+                    future_release_interval: 0,
+                    future_release_datetime: 0,
+                    mt_priority: MtPriority::Stanag4406,
+                    no_soliciting: None,
+                    size: 0,
                 }),
             ),
             (
                 concat!("523-Massive\n", "523-Error\n", "523 Message\n"),
-                Err(Error::InvalidResponse {
-                    response: Response {
-                        code: [5, 2, 3],
-                        esc: [0, 0, 0],
-                        message: "Massive\r\nError\r\nMessage".to_string(),
-                    },
-                }),
+                Err(Error::UnknownCommand),
             ),
         ] {
             let (response, parsed_response): (&str, Result<EhloResponse<String>, Error>) = item;
@@ -435,7 +439,10 @@ mod tests {
 
     #[test]
     fn parse_response() {
-        for (response, parsed_response, has_esc) in [
+        let mut all_responses = Vec::new();
+        let mut all_parsed_responses = Vec::new();
+
+        for (response, parsed_response, _) in [
             (
                 "250 2.1.1 Originator <ned@ymir.claremont.edu> ok\n",
                 Response {
@@ -454,7 +461,7 @@ mod tests {
                     code: [5, 5, 1],
                     esc: [5, 7, 1],
                     message: concat!(
-                        "Forwarding to remote hosts disabled ",
+                        "Forwarding to remote hosts disabled\n",
                         "Select another host to act as your forwarder"
                     )
                     .to_string(),
@@ -469,7 +476,7 @@ mod tests {
                 Response {
                     code: [5, 5, 0],
                     esc: [0, 0, 0],
-                    message: "mailbox unavailable user has moved with no forwarding address"
+                    message: "mailbox unavailable\nuser has moved with no forwarding address"
                         .to_string(),
                 },
                 false,
@@ -482,7 +489,7 @@ mod tests {
                 Response {
                     code: [5, 5, 0],
                     esc: [0, 0, 0],
-                    message: "mailbox unavailable user has moved with no forwarding address"
+                    message: "mailbox unavailable\nuser has moved with no forwarding address"
                         .to_string(),
                 },
                 true,
@@ -503,7 +510,7 @@ mod tests {
                 Response {
                     code: [4, 3, 2],
                     esc: [6, 8, 9],
-                    message: "Hello , World!".to_string(),
+                    message: "\nHello\n\n,\n\n\n\n\n\nWorld!".to_string(),
                 },
                 true,
             ),
@@ -512,17 +519,47 @@ mod tests {
                 Response {
                     code: [2, 5, 0],
                     esc: [0, 0, 0],
-                    message: "Missing space".to_string(),
+                    message: "Missing space\n".to_string(),
                 },
                 true,
             ),
         ] {
             assert_eq!(
                 parsed_response,
-                Response::parse(&mut response.as_bytes().iter(), has_esc).unwrap(),
+                ResponseReceiver::default()
+                    .parse(&mut response.as_bytes().iter())
+                    .unwrap(),
                 "failed for {:?}",
                 response
             );
+            all_responses.extend_from_slice(response.as_bytes());
+            all_parsed_responses.push(parsed_response);
+        }
+
+        // Test receiver
+        for chunk_size in [5, 10, 20, 30, 40, 50, 60] {
+            let mut receiver = ResponseReceiver::default();
+            let mut parsed_response = all_parsed_responses.clone().into_iter();
+            for chunk in all_responses.chunks(chunk_size) {
+                let mut bytes = chunk.iter();
+                loop {
+                    match receiver.parse(&mut bytes) {
+                        Ok(response) => {
+                            assert_eq!(
+                                parsed_response.next(),
+                                Some(response),
+                                "chunk size {}",
+                                chunk_size
+                            );
+                            receiver.reset();
+                        }
+                        Err(Error::NeedsMoreData { .. }) => {
+                            break;
+                        }
+                        err => panic!("Unexpected error {:?} for chunk size {}", err, chunk_size),
+                    }
+                }
+            }
         }
     }
 }

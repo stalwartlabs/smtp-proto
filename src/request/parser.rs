@@ -2,10 +2,13 @@ use std::slice::Iter;
 
 use crate::*;
 
-use super::{receiver::ReceiverParser, *};
+use super::*;
 
-impl ReceiverParser for Request<String> {
-    fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
+#[derive(Default)]
+pub struct RequestParser {}
+
+impl Request<String> {
+    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
         let command = parser.hashed_value()?;
         if !parser.stop_char.is_ascii_whitespace() {
@@ -289,7 +292,7 @@ impl ReceiverParser for Request<String> {
 pub(crate) struct Rfc5321Parser<'x, 'y> {
     bytes: &'x mut Iter<'y, u8>,
     pub(crate) stop_char: u8,
-    bytes_left: usize,
+    pub bytes_left: usize,
 }
 
 impl<'x, 'y> Rfc5321Parser<'x, 'y> {
@@ -1134,9 +1137,8 @@ impl TryFrom<u128> for Body {
 #[cfg(test)]
 mod tests {
     use crate::{
-        request::receiver::ReceiverParser, Body, By, Error, Mtrk, Orcpt, Parameter, Request, Ret,
-        Rrvs, AUTH_ECDSA_NIST256P_CHALLENGE, AUTH_GSSAPI, AUTH_SCRAM_SHA_256_PLUS, NOTIFY_DELAY,
-        NOTIFY_FAILURE, NOTIFY_SUCCESS,
+        Body, By, Error, Mtrk, Orcpt, Parameter, Request, Ret, Rrvs, AUTH_ECDSA_NIST256P_CHALLENGE,
+        AUTH_GSSAPI, AUTH_SCRAM_SHA_256_PLUS, NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS,
     };
 
     #[test]

@@ -165,61 +165,54 @@ pub const AUTH_LOGIN: u64 = 1u64 << 39;
 pub const AUTH_PLAIN: u64 = 1u64 << 40;
 pub const AUTH_ANONYMOUS: u64 = 1u64 << 41;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Capability {
-    EightBitMime,
-    Atrn,
-    Auth {
-        mechanisms: u64,
-    },
-    BinaryMime,
-    Burl,
-    Checkpoint,
-    Chunking,
-    Conneg,
-    Conperm,
-    DeliverBy {
-        min: u64,
-    },
-    Dsn,
-    EnhancedStatusCodes,
-    Etrn,
-    Expn,
-    FutureRelease {
-        max_interval: u64,
-        max_datetime: u64,
-    },
-    Help,
-    MtPriority {
-        priority: MtPriority,
-    },
-    Mtrk,
-    NoSoliciting {
-        keywords: Option<String>,
-    },
-    Onex,
-    Pipelining,
-    RequireTls,
-    Rrvs,
-    Size {
-        size: usize,
-    },
-    SmtpUtf8,
-    StartTls,
-    Verb,
-}
+pub const EXT_8BIT_MIME: u32 = 1 << 0;
+pub const EXT_ATRN: u32 = 1 << 1;
+pub const EXT_AUTH: u32 = 1 << 2;
+pub const EXT_BINARY_MIME: u32 = 1 << 3;
+pub const EXT_BURL: u32 = 1 << 4;
+pub const EXT_CHECKPOINT: u32 = 1 << 5;
+pub const EXT_CHUNKING: u32 = 1 << 6;
+pub const EXT_CONNEG: u32 = 1 << 7;
+pub const EXT_CONPERM: u32 = 1 << 8;
+pub const EXT_DELIVER_BY: u32 = 1 << 9;
+pub const EXT_DSN: u32 = 1 << 10;
+pub const EXT_ENHANCED_STATUS_CODES: u32 = 1 << 11;
+pub const EXT_ETRN: u32 = 1 << 12;
+pub const EXT_FUTURE_RELEASE: u32 = 1 << 13;
+pub const EXT_HELP: u32 = 1 << 14;
+pub const EXT_MT_PRIORITY: u32 = 1 << 15;
+pub const EXT_MTRK: u32 = 1 << 16;
+pub const EXT_NO_SOLICITING: u32 = 1 << 17;
+pub const EXT_ONEX: u32 = 1 << 18;
+pub const EXT_PIPELINING: u32 = 1 << 19;
+pub const EXT_REQUIRE_TLS: u32 = 1 << 20;
+pub const EXT_RRVS: u32 = 1 << 21;
+pub const EXT_SIZE: u32 = 1 << 22;
+pub const EXT_SMTP_UTF8: u32 = 1 << 23;
+pub const EXT_START_TLS: u32 = 1 << 24;
+pub const EXT_VERB: u32 = 1 << 25;
+pub const EXT_EXPN: u32 = 1 << 26;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MtPriority {
+    #[default]
     Mixer,
     Stanag4406,
     Nsep,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct EhloResponse<T: Display> {
     pub hostname: T,
-    pub capabilities: Vec<Capability>,
+    pub capabilities: u32,
+
+    pub auth_mechanisms: u64,
+    pub deliver_by: u64,
+    pub future_release_interval: u64,
+    pub future_release_datetime: u64,
+    pub mt_priority: MtPriority,
+    pub no_soliciting: Option<String>,
+    pub size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,7 +251,9 @@ pub enum Error {
     SyntaxError { syntax: &'static str },
     InvalidParameter { param: &'static str },
     UnsupportedParameter { param: String },
-    InvalidResponse { response: Response<String> },
+    LineTooLong,
+    ResponseTooLong,
+    InvalidResponse { code: [u8; 3] },
 }
 
 pub(crate) const LF: u8 = b'\n';
@@ -274,43 +269,3 @@ impl IntoString for Vec<u8> {
             .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned())
     }
 }
-
-/*
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn csv() {
-        // Build the CSV reader and iterate over each record.
-        let mut rdr = csv::Reader::from_path("smtp-enhanced-status-codes-1.csv").unwrap();
-        for result in rdr.records() {
-            // The iterator yields Result<StringRecord, Error>, so we check the
-            // error here.
-            let record = result.unwrap();
-            let codes = record.get(0).unwrap().split('.').collect::<Vec<_>>();
-            let title = record.get(1).unwrap().replace('\n', " ");
-            let desc = record
-                .get(2)
-                .unwrap()
-                .replace('\n', " ")
-                .replace('"', "\\\"")
-                .replace("This is useful only as a persistent transient error.", "")
-                .replace(
-                    "This is useful for both permanent and persistent transient errors.",
-                    "",
-                )
-                .replace("This is useful only as a permanent error.", "")
-                .trim()
-                .replace("  ", " ")
-                .chars()
-                .collect::<Vec<_>>()
-                .chunks(50)
-                .map(|s| format!("\"{}\"", s.iter().collect::<String>()))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            println!("{} => (\"{}\", concat!({})).into(),", codes[0], title, desc);
-        }
-    }
-}
-*/
