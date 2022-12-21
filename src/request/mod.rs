@@ -32,7 +32,7 @@ pub(crate) const ETRN: u64 =
     (b'E' as u64) | (b'T' as u64) << 8 | (b'R' as u64) << 16 | (b'N' as u64) << 24;
 pub(crate) const ATRN: u64 =
     (b'A' as u64) | (b'T' as u64) << 8 | (b'R' as u64) << 16 | (b'N' as u64) << 24;
-pub(crate) const AUTH: u64 =
+pub const AUTH: u64 =
     (b'A' as u64) | (b'U' as u64) << 8 | (b'T' as u64) << 16 | (b'H' as u64) << 24;
 pub(crate) const BURL: u64 =
     (b'B' as u64) | (b'U' as u64) << 8 | (b'R' as u64) << 16 | (b'L' as u64) << 24;

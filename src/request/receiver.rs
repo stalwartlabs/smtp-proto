@@ -28,6 +28,7 @@ pub struct DummyDataReceiver {
     prev_last_ch: u8,
 }
 
+#[derive(Default)]
 pub struct DummyLineReceiver {}
 
 impl RequestReceiver {
@@ -43,7 +44,7 @@ impl RequestReceiver {
                         if bytes_left < MAX_LINE_LENGTH {
                             self.buf = buf[buf.len() - bytes_left..].to_vec();
                         } else {
-                            return Err(Error::LineTooLong);
+                            return Err(Error::ResponseTooLong);
                         }
                     }
                 }
@@ -58,7 +59,7 @@ impl RequestReceiver {
                     return result;
                 } else if self.buf.len() == MAX_LINE_LENGTH {
                     self.buf.clear();
-                    return Err(Error::LineTooLong);
+                    return Err(Error::ResponseTooLong);
                 }
             }
         }

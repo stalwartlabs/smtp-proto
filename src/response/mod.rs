@@ -221,14 +221,8 @@ impl<T: Display> Display for Response<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Code: {}{}{}, Enhanced code: {}.{}.{}, Message: {}",
-            self.code[0],
-            self.code[1],
-            self.code[2],
-            self.esc[0],
-            self.esc[1],
-            self.esc[2],
-            self.message,
+            "Code: {}, Enhanced code: {}.{}.{}, Message: {}",
+            self.code, self.esc[0], self.esc[1], self.esc[2], self.message,
         )
     }
 }

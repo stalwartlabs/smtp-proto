@@ -289,9 +289,9 @@ impl Request<String> {
     }
 }
 
-pub(crate) struct Rfc5321Parser<'x, 'y> {
+pub struct Rfc5321Parser<'x, 'y> {
     bytes: &'x mut Iter<'y, u8>,
-    pub(crate) stop_char: u8,
+    pub stop_char: u8,
     pub bytes_left: usize,
 }
 
@@ -1046,7 +1046,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         Ok(params)
     }
 
-    pub(crate) fn mechanism(&mut self) -> Result<Option<u64>, Error> {
+    pub fn mechanism(&mut self) -> Result<Option<u64>, Error> {
         let mut trailing_chars = [0u8; 8];
         let mut pos = 0;
         let mechanism = self.hashed_value_long()?;

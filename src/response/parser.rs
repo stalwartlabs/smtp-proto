@@ -9,15 +9,17 @@ pub const MAX_REPONSE_LENGTH: usize = 4096;
 #[derive(Default)]
 pub struct ResponseReceiver {
     buf: Vec<u8>,
-    code: [u8; 6],
+    code: u16,
+    esc: [u8; 3],
     is_last: bool,
     pos: usize,
 }
 
 impl ResponseReceiver {
-    pub fn from_code(code: [u8; 3]) -> Self {
+    pub fn from_code(code: u16) -> Self {
         Self {
-            code: [code[0], code[1], code[2], 0, 0, 0],
+            code,
+            esc: [0, 0, 0],
             pos: 3,
             is_last: false,
             buf: Vec::new(),
@@ -30,7 +32,10 @@ impl ResponseReceiver {
                 0..=2 => {
                     if ch.is_ascii_digit() {
                         if self.buf.is_empty() {
-                            self.code[self.pos] = ch - b'0';
+                            self.code = self
+                                .code
+                                .saturating_mul(10)
+                                .saturating_add((ch - b'0') as u16);
                         }
                         self.pos += 1;
                     } else {
@@ -62,11 +67,11 @@ impl ResponseReceiver {
                 4 | 5 | 6 => match ch {
                     b'0'..=b'9' => {
                         if self.buf.is_empty() {
-                            let code = &mut self.code[self.pos - 1];
+                            let code = &mut self.esc[self.pos - 4];
                             *code = code.saturating_mul(10).saturating_add(ch - b'0');
                         }
                     }
-                    b'.' if self.pos < 6 && self.code[self.pos - 1] > 0 => {
+                    b'.' if self.pos < 6 && self.esc[self.pos - 4] > 0 => {
                         self.pos += 1;
                     }
                     _ => {
@@ -91,8 +96,8 @@ impl ResponseReceiver {
             if ch == b'\n' {
                 if self.is_last {
                     return Ok(Response {
-                        code: [self.code[0], self.code[1], self.code[2]],
-                        esc: [self.code[3], self.code[4], self.code[5]],
+                        code: self.code,
+                        esc: self.esc,
                         message: std::mem::take(&mut self.buf).into_string(),
                     });
                 } else {
@@ -107,7 +112,8 @@ impl ResponseReceiver {
 
     pub fn reset(&mut self) {
         self.is_last = false;
-        self.code.fill(0);
+        self.code = 0;
+        self.esc.fill(0);
         self.pos = 0;
     }
 }
@@ -116,15 +122,15 @@ impl EhloResponse<String> {
     pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Self, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
         let mut response = EhloResponse::default();
-        let mut code = [0u8; 3];
         let mut eol = false;
         let mut is_first_line = true;
 
         while !eol {
-            for code in code.iter_mut() {
+            let mut code: u16 = 0;
+            for _ in 0..3 {
                 match parser.read_char()? {
                     ch @ b'0'..=b'9' => {
-                        *code = ch - b'0';
+                        code = code.saturating_mul(10).saturating_add((ch - b'0') as u16);
                     }
                     _ => {
                         return Err(Error::SyntaxError {
@@ -134,7 +140,7 @@ impl EhloResponse<String> {
                 }
             }
 
-            if code[0] != 2 || code[1] != 5 || code[2] != 0 {
+            if code != 250 {
                 return Err(Error::InvalidResponse { code });
             }
 
@@ -143,7 +149,7 @@ impl EhloResponse<String> {
                     eol = true;
                 }
                 b'-' => (),
-                b'\n' if code[0] < 6 => {
+                b'\n' if code < 600 => {
                     break;
                 }
                 _ => {
@@ -416,7 +422,7 @@ mod tests {
             ),
             (
                 concat!("523-Massive\n", "523-Error\n", "523 Message\n"),
-                Err(Error::UnknownCommand),
+                Err(Error::InvalidResponse { code: 523 }),
             ),
         ] {
             let (response, parsed_response): (&str, Result<EhloResponse<String>, Error>) = item;
@@ -446,7 +452,7 @@ mod tests {
             (
                 "250 2.1.1 Originator <ned@ymir.claremont.edu> ok\n",
                 Response {
-                    code: [2, 5, 0],
+                    code: 250,
                     esc: [2, 1, 1],
                     message: "Originator <ned@ymir.claremont.edu> ok".to_string(),
                 },
@@ -458,7 +464,7 @@ mod tests {
                     "551 5.7.1 Select another host to act as your forwarder\n"
                 ),
                 Response {
-                    code: [5, 5, 1],
+                    code: 551,
                     esc: [5, 7, 1],
                     message: concat!(
                         "Forwarding to remote hosts disabled\n",
@@ -474,7 +480,7 @@ mod tests {
                     "550 user has moved with no forwarding address\n"
                 ),
                 Response {
-                    code: [5, 5, 0],
+                    code: 550,
                     esc: [0, 0, 0],
                     message: "mailbox unavailable\nuser has moved with no forwarding address"
                         .to_string(),
@@ -487,7 +493,7 @@ mod tests {
                     "550 user has moved with no forwarding address\n"
                 ),
                 Response {
-                    code: [5, 5, 0],
+                    code: 550,
                     esc: [0, 0, 0],
                     message: "mailbox unavailable\nuser has moved with no forwarding address"
                         .to_string(),
@@ -508,7 +514,7 @@ mod tests {
                     "432 6.8.9 World!\n"
                 ),
                 Response {
-                    code: [4, 3, 2],
+                    code: 432,
                     esc: [6, 8, 9],
                     message: "\nHello\n\n,\n\n\n\n\n\nWorld!".to_string(),
                 },
@@ -517,7 +523,7 @@ mod tests {
             (
                 concat!("250-Missing space\n", "250\n", "250 Ignore this"),
                 Response {
-                    code: [2, 5, 0],
+                    code: 250,
                     esc: [0, 0, 0],
                     message: "Missing space\n".to_string(),
                 },

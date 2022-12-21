@@ -217,7 +217,7 @@ pub struct EhloResponse<T: Display> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response<T: Display> {
-    pub code: [u8; 3],
+    pub code: u16,
     pub esc: [u8; 3],
     pub message: T,
 }
@@ -251,15 +251,14 @@ pub enum Error {
     SyntaxError { syntax: &'static str },
     InvalidParameter { param: &'static str },
     UnsupportedParameter { param: String },
-    LineTooLong,
     ResponseTooLong,
-    InvalidResponse { code: [u8; 3] },
+    InvalidResponse { code: u16 },
 }
 
 pub(crate) const LF: u8 = b'\n';
 pub(crate) const SP: u8 = b' ';
 
-pub(crate) trait IntoString: Sized {
+pub trait IntoString: Sized {
     fn into_string(self) -> String;
 }
 

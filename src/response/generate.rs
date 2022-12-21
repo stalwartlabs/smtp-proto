@@ -25,7 +25,7 @@ impl<T: Display> EhloResponse<T> {
         let mut capabilities = self.capabilities;
 
         while capabilities != 0 {
-            let capability = 63 - capabilities.leading_zeros();
+            let capability = 31 - capabilities.leading_zeros();
             capabilities ^= 1 << capability;
 
             writer.write_all(b"250")?;
@@ -109,14 +109,8 @@ impl<T: Display> Response<T> {
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
         write!(
             writer,
-            "{}{}{} {}.{}.{} {}\r\n",
-            self.code[0],
-            self.code[1],
-            self.code[2],
-            self.esc[0],
-            self.esc[1],
-            self.esc[2],
-            self.message
+            "{} {}.{}.{} {}\r\n",
+            self.code, self.esc[0], self.esc[1], self.esc[2], self.message
         )
     }
 }
@@ -176,17 +170,17 @@ impl BitToString for u64 {
 }
 
 impl<T: Display> Response<T> {
-    pub fn new(c0: u8, c1: u8, c2: u8, e0: u8, e1: u8, e2: u8, message: T) -> Self {
+    pub fn new(code: u16, e0: u8, e1: u8, e2: u8, message: T) -> Self {
         Self {
-            code: [c0, c1, c2],
+            code,
             esc: [e0, e1, e2],
             message,
         }
     }
 
     /// Returns the reply's numeric status.
-    pub fn code(&self) -> &[u8] {
-        &self.code
+    pub fn code(&self) -> u16 {
+        self.code
     }
 
     /// Returns the message included in the reply.
@@ -196,18 +190,18 @@ impl<T: Display> Response<T> {
 
     /// Returns the status severity (first digit of the status code).
     pub fn severity(&self) -> Severity {
-        match self.code[0] {
-            2 => Severity::PositiveCompletion,
-            3 => Severity::PositiveIntermediate,
-            4 => Severity::TransientNegativeCompletion,
-            5 => Severity::PermanentNegativeCompletion,
+        match self.code {
+            200..=299 => Severity::PositiveCompletion,
+            300..=399 => Severity::PositiveIntermediate,
+            400..=499 => Severity::TransientNegativeCompletion,
+            500..=599 => Severity::PermanentNegativeCompletion,
             _ => Severity::Invalid,
         }
     }
 
     /// Returns the status category (second digit of the status code).
     pub fn category(&self) -> Category {
-        match self.code[1] {
+        match (self.code / 10) % 10 {
             0 => Category::Syntax,
             1 => Category::Information,
             2 => Category::Connections,
@@ -219,8 +213,8 @@ impl<T: Display> Response<T> {
     }
 
     /// Returns the status details (third digit of the status code).
-    pub fn details(&self) -> u8 {
-        self.code[2]
+    pub fn details(&self) -> u16 {
+        self.code % 10
     }
 
     /// Returns `true` if the reply is a positive completion.
