@@ -201,6 +201,7 @@ impl EhloResponse<String> {
                     }
                     ETRN => EXT_ETRN,
                     EXPN => EXT_EXPN,
+                    VRFY => EXT_VRFY,
                     FUTURERELEASE => {
                         let max_interval = if parser.stop_char != LF {
                             parser.size()?
@@ -327,6 +328,7 @@ mod tests {
                     "250-ENHANCEDSTATUSCODES\n",
                     "250-ETRN\n",
                     "250-EXPN\n",
+                    "250-VRFY\n",
                     "250-FUTURERELEASE 1234 5678\n",
                     "250-HELP\n",
                     "250-MT-PRIORITY\n",
@@ -355,6 +357,7 @@ mod tests {
                         | EXT_ENHANCED_STATUS_CODES
                         | EXT_ETRN
                         | EXT_EXPN
+                        | EXT_VRFY
                         | EXT_FUTURE_RELEASE
                         | EXT_HELP
                         | EXT_MT_PRIORITY

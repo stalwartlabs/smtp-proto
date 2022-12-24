@@ -90,6 +90,8 @@ pub(crate) const ETRN: u128 =
     (b'E' as u128) | (b'T' as u128) << 8 | (b'R' as u128) << 16 | (b'N' as u128) << 24;
 pub(crate) const EXPN: u128 =
     (b'E' as u128) | (b'X' as u128) << 8 | (b'P' as u128) << 16 | (b'N' as u128) << 24;
+pub(crate) const VRFY: u128 =
+    (b'V' as u128) | (b'R' as u128) << 8 | (b'F' as u128) << 16 | (b'Y' as u128) << 24;
 pub(crate) const FUTURERELEASE: u128 = (b'F' as u128)
     | (b'U' as u128) << 8
     | (b'T' as u128) << 16

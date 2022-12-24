@@ -2,7 +2,7 @@ use std::slice::Iter;
 
 use crate::{Error, Request};
 
-const MAX_LINE_LENGTH: usize = 2048;
+pub const MAX_LINE_LENGTH: usize = 2048;
 
 #[derive(Default)]
 pub struct RequestReceiver {
@@ -30,6 +30,12 @@ pub struct DummyDataReceiver {
 
 #[derive(Default)]
 pub struct DummyLineReceiver {}
+
+#[derive(Default)]
+pub struct LineReceiver<T> {
+    pub buf: Vec<u8>,
+    pub state: T,
+}
 
 impl RequestReceiver {
     pub fn ingest(
@@ -177,6 +183,30 @@ impl DummyDataReceiver {
 
             true
         }
+    }
+}
+
+impl<T> LineReceiver<T> {
+    pub fn new(state: T) -> Self {
+        Self {
+            buf: Vec::with_capacity(32),
+            state,
+        }
+    }
+
+    pub fn ingest(&mut self, bytes: &mut Iter<'_, u8>) -> bool {
+        for &ch in bytes {
+            match ch {
+                b'\n' => return true,
+                b'\r' => (),
+                _ => {
+                    if self.buf.len() < MAX_LINE_LENGTH {
+                        self.buf.push(ch);
+                    }
+                }
+            }
+        }
+        false
     }
 }
 

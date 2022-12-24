@@ -192,6 +192,7 @@ pub const EXT_SMTP_UTF8: u32 = 1 << 23;
 pub const EXT_START_TLS: u32 = 1 << 24;
 pub const EXT_VERB: u32 = 1 << 25;
 pub const EXT_EXPN: u32 = 1 << 26;
+pub const EXT_VRFY: u32 = 1 << 27;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MtPriority {

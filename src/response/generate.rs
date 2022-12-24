@@ -60,6 +60,7 @@ impl<T: Display> EhloResponse<T> {
                 EXT_ENHANCED_STATUS_CODES => write!(writer, "ENHANCEDSTATUSCODES\r\n"),
                 EXT_ETRN => write!(writer, "ETRN\r\n"),
                 EXT_EXPN => write!(writer, "EXPN\r\n"),
+                EXT_VRFY => write!(writer, "VRFY\r\n"),
                 EXT_FUTURE_RELEASE => write!(
                     writer,
                     "FUTURERELEASE {} {}\r\n",
