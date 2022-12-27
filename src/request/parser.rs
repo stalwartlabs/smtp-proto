@@ -25,8 +25,7 @@ impl Request<String> {
                     if let Some(to) = parser.address()? {
                         if parser.stop_char == b'>' {
                             return Ok(Request::Rcpt {
-                                to,
-                                parameters: parser.parameters()?,
+                                to: parser.rcpt_to_parameters(to)?,
                             });
                         }
                     } else {
@@ -48,8 +47,7 @@ impl Request<String> {
                     if let Some(from) = parser.address()? {
                         if parser.stop_char == b'>' {
                             return Ok(Request::Mail {
-                                from,
-                                parameters: parser.parameters()?,
+                                from: parser.mail_from_parameters(from)?,
                             });
                         }
                     } else {
@@ -789,27 +787,42 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
-    pub fn parameters(&mut self) -> Result<Vec<Parameter<String>>, Error> {
-        let mut params = Vec::new();
+    pub fn mail_from_parameters(&mut self, address: String) -> Result<MailFrom<String>, Error> {
+        let mut params = MailFrom {
+            address,
+            flags: 0,
+            size: 0,
+            trans_id: None,
+            by: 0,
+            env_id: None,
+            solicit: None,
+            mtrk: None,
+            auth: None,
+            hold_for: 0,
+            hold_until: 0,
+            mt_priority: 0,
+        };
         while self.stop_char != LF {
             let key = self.hashed_value_long()?;
             match key {
                 SMTPUTF8 if self.stop_char.is_ascii_whitespace() => {
-                    params.push(Parameter::SmtpUtf8);
+                    params.flags |= MAIL_SMTPUTF8;
                 }
-                BODY if self.stop_char == b'=' => match Body::try_from(self.hashed_value_long()?) {
-                    Ok(body) if self.stop_char.is_ascii_whitespace() => {
-                        params.push(Parameter::Body(body));
+                BODY if self.stop_char == b'=' => {
+                    params.flags |= match self.hashed_value_long()? {
+                        EIGHBITMIME if self.stop_char.is_ascii_whitespace() => MAIL_BODY_8BITMIME,
+                        BINARYMIME if self.stop_char.is_ascii_whitespace() => MAIL_BODY_BINARYMIME,
+                        SEVENBIT if self.stop_char.is_ascii_whitespace() => MAIL_BODY_7BIT,
+                        _ => {
+                            self.seek_lf()?;
+                            return Err(Error::InvalidParameter { param: "BODY" });
+                        }
                     }
-                    _ => {
-                        self.seek_lf()?;
-                        return Err(Error::InvalidParameter { param: "BODY" });
-                    }
-                },
+                }
                 SIZE if self.stop_char == b'=' => {
                     let size = self.size()?;
                     if size != usize::MAX && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::Size(size));
+                        params.size = size;
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "SIZE" });
@@ -818,21 +831,21 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 BY if self.stop_char == b'=' => {
                     let time = self.integer()?;
                     if time != i64::MAX && self.stop_char == b';' {
-                        let (is_notify, trace) = match self.hashed_value()? {
-                            N if self.stop_char.is_ascii_whitespace() => (true, false),
-                            NT if self.stop_char.is_ascii_whitespace() => (true, true),
-                            R if self.stop_char.is_ascii_whitespace() => (false, false),
-                            RT if self.stop_char.is_ascii_whitespace() => (false, true),
+                        params.flags |= match self.hashed_value()? {
+                            N if self.stop_char.is_ascii_whitespace() => MAIL_BY_NOTIFY,
+                            NT if self.stop_char.is_ascii_whitespace() => {
+                                MAIL_BY_NOTIFY | MAIL_BY_TRACE
+                            }
+                            R if self.stop_char.is_ascii_whitespace() => MAIL_BY_RETURN,
+                            RT if self.stop_char.is_ascii_whitespace() => {
+                                MAIL_BY_RETURN | MAIL_BY_TRACE
+                            }
                             _ => {
                                 self.seek_lf()?;
                                 return Err(Error::InvalidParameter { param: "BY" });
                             }
                         };
-                        params.push(Parameter::By(if is_notify {
-                            By::Notify { time, trace }
-                        } else {
-                            By::Return { time, trace }
-                        }));
+                        params.by = time;
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "BY" });
@@ -841,7 +854,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 HOLDUNTIL if self.stop_char == b'=' => {
                     let hold = self.size()?;
                     if hold != usize::MAX && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::HoldUntil(hold as u64));
+                        params.hold_until = hold as u64;
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "HOLDUNTIL" });
@@ -850,83 +863,38 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 HOLDFOR if self.stop_char == b'=' => {
                     let hold = self.size()?;
                     if hold != usize::MAX && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::HoldFor(hold as u64));
+                        params.hold_for = hold as u64;
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "HOLDFOR" });
                     }
                 }
-                NOTIFY if self.stop_char == b'=' => {
-                    let mut notify = 0;
-                    loop {
-                        match self.hashed_value_long()? {
-                            NEVER if notify == 0 => (),
-                            SUCCESS => {
-                                notify |= NOTIFY_SUCCESS;
-                            }
-                            FAILURE => {
-                                notify |= NOTIFY_FAILURE;
-                            }
-                            DELAY => {
-                                notify |= NOTIFY_DELAY;
-                            }
-                            _ => {
-                                self.seek_lf()?;
-                                return Err(Error::InvalidParameter { param: "NOTIFY" });
-                            }
-                        }
-                        if self.stop_char.is_ascii_whitespace() {
-                            break;
-                        } else if self.stop_char != b',' {
-                            self.seek_lf()?;
-                            return Err(Error::InvalidParameter { param: "NOTIFY" });
-                        }
-                    }
-                    params.push(Parameter::Notify(notify));
-                }
-                ORCPT if self.stop_char == b'=' => {
-                    let addr_type = self.seek_char(b';')?;
-                    if self.stop_char != b';' {
-                        self.seek_lf()?;
-                        return Err(Error::InvalidParameter { param: "ORCPT" });
-                    }
-                    let addr = self.xtext()?;
-                    if self.stop_char.is_ascii_whitespace()
-                        && !addr_type.is_empty()
-                        && !addr.is_empty()
-                    {
-                        params.push(Parameter::Orcpt(Orcpt { addr_type, addr }));
-                    } else {
-                        self.seek_lf()?;
-                        return Err(Error::InvalidParameter { param: "ORCPT" });
-                    }
-                }
                 RET if self.stop_char == b'=' => {
-                    params.push(Parameter::Ret(match self.hashed_value()? {
-                        FULL if self.stop_char.is_ascii_whitespace() => Ret::Full,
-                        HDRS if self.stop_char.is_ascii_whitespace() => Ret::Hdrs,
+                    params.flags |= match self.hashed_value()? {
+                        FULL if self.stop_char.is_ascii_whitespace() => MAIL_RET_FULL,
+                        HDRS if self.stop_char.is_ascii_whitespace() => MAIL_RET_HDRS,
                         _ => {
                             self.seek_lf()?;
                             return Err(Error::InvalidParameter { param: "RET" });
                         }
-                    }));
+                    };
                 }
                 ENVID if self.stop_char == b'=' => {
-                    let envid = self.xtext()?;
-                    if self.stop_char.is_ascii_whitespace() && !envid.is_empty() {
-                        params.push(Parameter::EnvId(envid));
+                    let env_id = self.xtext()?;
+                    if self.stop_char.is_ascii_whitespace() && !env_id.is_empty() {
+                        params.env_id = env_id.into();
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "ENVID" });
                     }
                 }
                 REQUIRETLS if self.stop_char.is_ascii_whitespace() => {
-                    params.push(Parameter::RequireTls);
+                    params.flags |= MAIL_REQUIRETLS;
                 }
                 SOLICIT if self.stop_char == b'=' => {
                     let solicit = self.text()?;
                     if !solicit.is_empty() && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::Solicit(solicit));
+                        params.solicit = solicit.into();
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "SOLICIT" });
@@ -936,7 +904,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     if self.next_char()? == b'<' {
                         let transid = self.seek_char(b'>')?;
                         if self.stop_char == b'>' && !transid.is_empty() {
-                            params.push(Parameter::TransId(transid));
+                            params.trans_id = transid.into();
                             self.stop_char = SP;
                             continue;
                         }
@@ -956,10 +924,11 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                         && self.stop_char.is_ascii_whitespace()
                         && timeout != usize::MAX
                     {
-                        params.push(Parameter::Mtrk(Mtrk {
+                        params.mtrk = Mtrk {
                             certifier,
                             timeout: timeout as u64,
-                        }));
+                        }
+                        .into();
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "MTRK" });
@@ -968,7 +937,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 AUTH_ if self.stop_char == b'=' => {
                     let mailbox = self.xtext()?;
                     if !mailbox.is_empty() && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::Auth(mailbox));
+                        params.auth = mailbox.into();
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "AUTH" });
@@ -977,12 +946,106 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 MT_PRIORITY if self.stop_char == b'=' => {
                     let priority = self.integer()?;
                     if priority != i64::MAX && self.stop_char.is_ascii_whitespace() {
-                        params.push(Parameter::MtPriority(priority));
+                        params.mt_priority = priority;
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter {
                             param: "MT-PRIORITY",
                         });
+                    }
+                }
+                CONPERM if self.stop_char.is_ascii_whitespace() => {
+                    params.flags |= MAIL_CONPERM;
+                }
+                0 => (),
+                unknown => {
+                    let mut param = Vec::with_capacity(16);
+                    for ch in unknown.to_le_bytes() {
+                        if ch != 0 {
+                            param.push(ch.to_ascii_uppercase());
+                        }
+                    }
+                    if !self.stop_char.is_ascii_whitespace() {
+                        param.push(self.stop_char.to_ascii_uppercase());
+                        for &ch in &mut self.bytes {
+                            if !ch.is_ascii_whitespace() {
+                                param.push(ch.to_ascii_uppercase());
+                            } else {
+                                self.stop_char = ch;
+                                break;
+                            }
+                        }
+                    }
+
+                    self.seek_lf()?;
+                    return Err(Error::UnsupportedParameter {
+                        param: param.into_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(params)
+    }
+
+    pub fn rcpt_to_parameters(&mut self, address: String) -> Result<RcptTo<String>, Error> {
+        let mut params = RcptTo {
+            address,
+            orcpt: None,
+            rrvs: 0,
+            flags: 0,
+        };
+        while self.stop_char != LF {
+            let key = self.hashed_value_long()?;
+            match key {
+                NOTIFY if self.stop_char == b'=' => loop {
+                    match self.hashed_value_long()? {
+                        NEVER
+                            if (params.flags
+                                & (RCPT_NOTIFY_NEVER
+                                    | RCPT_NOTIFY_SUCCESS
+                                    | RCPT_NOTIFY_FAILURE
+                                    | RCPT_NOTIFY_DELAY))
+                                == 0 =>
+                        {
+                            params.flags |= RCPT_NOTIFY_NEVER;
+                        }
+                        SUCCESS => {
+                            params.flags |= RCPT_NOTIFY_SUCCESS;
+                        }
+                        FAILURE => {
+                            params.flags |= RCPT_NOTIFY_FAILURE;
+                        }
+                        DELAY => {
+                            params.flags |= RCPT_NOTIFY_DELAY;
+                        }
+                        _ => {
+                            self.seek_lf()?;
+                            return Err(Error::InvalidParameter { param: "NOTIFY" });
+                        }
+                    }
+                    if self.stop_char.is_ascii_whitespace() {
+                        break;
+                    } else if self.stop_char != b',' {
+                        self.seek_lf()?;
+                        return Err(Error::InvalidParameter { param: "NOTIFY" });
+                    }
+                },
+                ORCPT if self.stop_char == b'=' => {
+                    let addr_type = self.seek_char(b';')?;
+                    if self.stop_char != b';' {
+                        self.seek_lf()?;
+                        return Err(Error::InvalidParameter { param: "ORCPT" });
+                    }
+                    let addr = self.xtext()?;
+                    if self.stop_char.is_ascii_whitespace()
+                        && !addr_type.is_empty()
+                        && !addr.is_empty()
+                    {
+                        params.orcpt = (addr_type, addr).into();
+                    } else {
+                        self.seek_lf()?;
+                        return Err(Error::InvalidParameter { param: "ORCPT" });
                     }
                 }
                 RRVS if self.stop_char == b'=' => {
@@ -999,21 +1062,19 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                                     return Err(Error::InvalidParameter { param: "RRVS" });
                                 }
                             };
-                        params.push(Parameter::Rrvs(if is_reject {
-                            Rrvs::Reject(time)
+                        params.rrvs = time;
+                        params.flags |= if is_reject {
+                            RCPT_RRVS_REJECT
                         } else {
-                            Rrvs::Continue(time)
-                        }));
+                            RCPT_RRVS_CONTINUE
+                        };
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "RRVS" });
                     }
                 }
-                CONPERM if self.stop_char.is_ascii_whitespace() => {
-                    params.push(Parameter::ConPerm);
-                }
                 CONNEG if self.stop_char.is_ascii_whitespace() => {
-                    params.push(Parameter::ConNeg);
+                    params.flags |= RCPT_CONNEG;
                 }
                 0 => (),
                 unknown => {
@@ -1121,25 +1182,9 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
     }
 }
 
-impl TryFrom<u128> for Body {
-    type Error = ();
-
-    fn try_from(value: u128) -> Result<Self, Self::Error> {
-        match value {
-            EIGHBITMIME => Ok(Body::EightBitMime),
-            BINARYMIME => Ok(Body::BinaryMime),
-            SEVENBIT => Ok(Body::SevenBit),
-            _ => Err(()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{
-        Body, By, Error, Mtrk, Orcpt, Parameter, Request, Ret, Rrvs, AUTH_ECDSA_NIST256P_CHALLENGE,
-        AUTH_GSSAPI, AUTH_SCRAM_SHA_256_PLUS, NOTIFY_DELAY, NOTIFY_FAILURE, NOTIFY_SUCCESS,
-    };
+    use crate::*;
 
     #[test]
     fn parse_request() {
@@ -1435,50 +1480,33 @@ mod tests {
             (
                 "MAIL FROM:<JQP@bar.com>",
                 Ok(Request::Mail {
-                    from: "JQP@bar.com".to_string(),
-                    parameters: vec![],
+                    from: "JQP@bar.com".into(),
                 }),
             ),
             (
                 "MAIL FROM:<@a,@b:user@d>",
                 Ok(Request::Mail {
-                    from: "user@d".to_string(),
-                    parameters: vec![],
+                    from: "user@d".into(),
                 }),
             ),
             (
                 "MAIL FROM:<\"@a,@b:<user>\"@d>",
                 Ok(Request::Mail {
-                    from: "@a,@b:<user>@d".to_string(),
-                    parameters: vec![],
+                    from: "@a,@b:<user>@d".into(),
                 }),
             ),
             (
                 "MAIL FROM: <\" hi there! \"@d>",
                 Ok(Request::Mail {
-                    from: " hi there! @d".to_string(),
-                    parameters: vec![],
+                    from: " hi there! @d".into(),
                 }),
             ),
-            (
-                "MAIL  FROM : <>",
-                Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![],
-                }),
-            ),
-            (
-                "MAIL  FROM : < >",
-                Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![],
-                }),
-            ),
+            ("MAIL  FROM : <>", Ok(Request::Mail { from: "".into() })),
+            ("MAIL  FROM : < >", Ok(Request::Mail { from: "".into() })),
             (
                 "MAIL FROM:<hi.there@valid.org>",
                 Ok(Request::Mail {
-                    from: "hi.there@valid.org".to_string(),
-                    parameters: vec![],
+                    from: "hi.there@valid.org".into(),
                 }),
             ),
             ("MAIL FROM:<@invalid>", Err(Error::InvalidSenderAddress)),
@@ -1507,25 +1535,17 @@ mod tests {
             (
                 "RCPT TO:<孫子@áéíóú.org>",
                 Ok(Request::Rcpt {
-                    to: "孫子@áéíóú.org".to_string(),
-                    parameters: vec![],
+                    to: "孫子@áéíóú.org".into(),
                 }),
             ),
             // RCPT TO
             (
                 "RCPT TO:<Jones@XYZ.COM>",
                 Ok(Request::Rcpt {
-                    to: "Jones@XYZ.COM".to_string(),
-                    parameters: vec![],
+                    to: "Jones@XYZ.COM".into(),
                 }),
             ),
-            (
-                "RCPT TO:<>",
-                Ok(Request::Rcpt {
-                    to: "".to_string(),
-                    parameters: vec![],
-                }),
-            ),
+            ("RCPT TO:<>", Ok(Request::Rcpt { to: "".into() })),
             // Invalid commands
             ("", Err(Error::UnknownCommand)),
             ("X-SPECIAL", Err(Error::UnknownCommand)),
@@ -1559,31 +1579,41 @@ mod tests {
             (
                 "MAIL FROM:<> SMTPUTF8",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::SmtpUtf8],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        flags: MAIL_SMTPUTF8,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
-                "MAIL FROM:<> SMTPUTF8 REQUIRETLS CONPERM CONNEG",
+                "MAIL FROM:<> SMTPUTF8 REQUIRETLS CONPERM",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::SmtpUtf8,
-                        Parameter::RequireTls,
-                        Parameter::ConPerm,
-                        Parameter::ConNeg,
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        flags: MAIL_SMTPUTF8 | MAIL_REQUIRETLS | MAIL_CONPERM,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "RCPT TO:<> CONNEG",
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        flags: RCPT_CONNEG,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
                 "MAIL FROM:<> BODY=BINARYMIME BODY=7BIT BODY=8BITMIME",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Body(Body::BinaryMime),
-                        Parameter::Body(Body::SevenBit),
-                        Parameter::Body(Body::EightBitMime),
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        flags: MAIL_BODY_7BIT | MAIL_BODY_8BITMIME | MAIL_BODY_BINARYMIME,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1591,10 +1621,13 @@ mod tests {
                 Err(Error::InvalidParameter { param: "BODY" }),
             ),
             (
-                "MAIL FROM:<> SIZE=500000 SIZE=0",
+                "MAIL FROM:<> SIZE=500000",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::Size(500000), Parameter::Size(0)],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        size: 500000,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1610,27 +1643,47 @@ mod tests {
                 Err(Error::InvalidParameter { param: "SIZE" }),
             ),
             (
-                "MAIL FROM:<> BY=120;R BY=0;N BY=-10;RT BY=+22;NT",
+                "MAIL FROM:<> BY=120;R",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::By(By::Return {
-                            time: 120,
-                            trace: false,
-                        }),
-                        Parameter::By(By::Notify {
-                            time: 0,
-                            trace: false,
-                        }),
-                        Parameter::By(By::Return {
-                            time: -10,
-                            trace: true,
-                        }),
-                        Parameter::By(By::Notify {
-                            time: 22,
-                            trace: true,
-                        }),
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        by: 120,
+                        flags: MAIL_BY_RETURN,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> BY=0;N",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        by: 0,
+                        flags: MAIL_BY_NOTIFY,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> BY=-10;RT",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        by: -10,
+                        flags: MAIL_BY_RETURN | MAIL_BY_TRACE,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> BY=+22;NT",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        by: 22,
+                        flags: MAIL_BY_NOTIFY | MAIL_BY_TRACE,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1668,8 +1721,12 @@ mod tests {
             (
                 "MAIL FROM:<> HOLDUNTIL=12345 HOLDFOR=67890",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::HoldUntil(12345), Parameter::HoldFor(67890)],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        hold_for: 67890,
+                        hold_until: 12345,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1689,72 +1746,101 @@ mod tests {
                 Err(Error::InvalidParameter { param: "HOLDFOR" }),
             ),
             (
-                concat!(
-                    "MAIL FROM:<> NOTIFY=FAILURE NOTIFY=FAILURE,DELAY ",
-                    "NOTIFY=SUCCESS,FAILURE,DELAY NOTIFY=NEVER"
-                ),
-                Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Notify(NOTIFY_FAILURE),
-                        Parameter::Notify(NOTIFY_FAILURE | NOTIFY_DELAY),
-                        Parameter::Notify(NOTIFY_FAILURE | NOTIFY_DELAY | NOTIFY_SUCCESS),
-                        Parameter::Notify(0),
-                    ],
+                concat!("RCPT TO:<> NOTIFY=FAILURE"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        flags: RCPT_NOTIFY_FAILURE,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
-                "MAIL FROM:<> NOTIFY=",
-                Err(Error::InvalidParameter { param: "NOTIFY" }),
-            ),
-            (
-                "MAIL FROM:<> NOTIFY=FAILURE,NEVER",
-                Err(Error::InvalidParameter { param: "NOTIFY" }),
-            ),
-            (
-                "MAIL FROM:<> NOTIFY=CHIMICHANGA",
-                Err(Error::InvalidParameter { param: "NOTIFY" }),
-            ),
-            (
-                concat!(
-                    "MAIL FROM:<> ORCPT=rfc822;Bob@Example.COM ",
-                    "ORCPT=rfc822;George+20@Tax-+20ME+20.GOV"
-                ),
-                Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Orcpt(Orcpt {
-                            addr_type: "rfc822".to_string(),
-                            addr: "Bob@Example.COM".to_string(),
-                        }),
-                        Parameter::Orcpt(Orcpt {
-                            addr_type: "rfc822".to_string(),
-                            addr: "George @Tax- ME .GOV".to_string(),
-                        }),
-                    ],
+                concat!("RCPT TO:<> NOTIFY=FAILURE,DELAY"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        flags: RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
-                "MAIL FROM:<> ORCPT=",
+                concat!("RCPT TO:<> NOTIFY=SUCCESS,FAILURE,DELAY"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        flags: RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                concat!("RCPT TO:<> NOTIFY=NEVER"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        flags: RCPT_NOTIFY_NEVER,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "RCPT TO:<> NOTIFY=",
+                Err(Error::InvalidParameter { param: "NOTIFY" }),
+            ),
+            (
+                "RCPT TO:<> NOTIFY=FAILURE,NEVER",
+                Err(Error::InvalidParameter { param: "NOTIFY" }),
+            ),
+            (
+                "RCPT TO:<> NOTIFY=CHIMICHANGA",
+                Err(Error::InvalidParameter { param: "NOTIFY" }),
+            ),
+            (
+                concat!("RCPT TO:<> ORCPT=rfc822;Bob@Example.COM"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        orcpt: ("rfc822".to_string(), "Bob@Example.COM".to_string()).into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                concat!("RCPT TO:<> ", "ORCPT=rfc822;George+20@Tax-+20ME+20.GOV"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        orcpt: ("rfc822".to_string(), "George @Tax- ME .GOV".to_string()).into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "RCPT TO:<> ORCPT=",
                 Err(Error::InvalidParameter { param: "ORCPT" }),
             ),
             (
-                "MAIL FROM:<> ORCPT=;hello@domain.org",
+                "RCPT TO:<> ORCPT=;hello@domain.org",
                 Err(Error::InvalidParameter { param: "ORCPT" }),
             ),
             (
-                "MAIL FROM:<> ORCPT=rfc822;",
+                "RCPT TO:<> ORCPT=rfc822;",
                 Err(Error::InvalidParameter { param: "ORCPT" }),
             ),
             (
-                "MAIL FROM:<> ORCPT=;",
+                "RCPT TO:<> ORCPT=;",
                 Err(Error::InvalidParameter { param: "ORCPT" }),
             ),
             (
                 "MAIL FROM:<> RET=HDRS RET=FULL",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::Ret(Ret::Hdrs), Parameter::Ret(Ret::Full)],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        flags: MAIL_RET_FULL | MAIL_RET_HDRS,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1766,13 +1852,23 @@ mod tests {
                 Err(Error::InvalidParameter { param: "RET" }),
             ),
             (
-                "MAIL FROM:<> ENVID=QQ314159 ENVID=hi+20there",
+                "MAIL FROM:<> ENVID=QQ314159",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::EnvId("QQ314159".to_string()),
-                        Parameter::EnvId("hi there".to_string()),
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        env_id: "QQ314159".to_string().into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> ENVID=hi+20there",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        env_id: "hi there".to_string().into(),
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1780,16 +1876,26 @@ mod tests {
                 Err(Error::InvalidParameter { param: "ENVID" }),
             ),
             (
+                concat!("MAIL FROM:<> SOLICIT=org.example:ADV:ADLT",),
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        solicit: "org.example:ADV:ADLT".to_string().into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
                 concat!(
-                    "MAIL FROM:<> SOLICIT=org.example:ADV:ADLT ",
+                    "MAIL FROM:<> ",
                     " SOLICIT=net.example:ADV,org.example:ADV:ADLT"
                 ),
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Solicit("org.example:ADV:ADLT".to_string()),
-                        Parameter::Solicit("net.example:ADV,org.example:ADV:ADLT".to_string()),
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        solicit: "net.example:ADV,org.example:ADV:ADLT".to_string().into(),
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1799,8 +1905,11 @@ mod tests {
             (
                 "MAIL FROM:<> TRANSID=<12345@claremont.edu>",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::TransId("12345@claremont.edu".to_string())],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        trans_id: "12345@claremont.edu".to_string().into(),
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1808,19 +1917,31 @@ mod tests {
                 Err(Error::InvalidParameter { param: "TRANSID" }),
             ),
             (
-                "MAIL FROM:<> MTRK=my-ceritifier MTRK=other-certifier:1234",
+                "MAIL FROM:<> MTRK=my-ceritifier",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Mtrk(Mtrk {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        mtrk: Mtrk {
                             certifier: "my-ceritifier".to_string(),
                             timeout: 0,
-                        }),
-                        Parameter::Mtrk(Mtrk {
+                        }
+                        .into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> MTRK=other-certifier:1234",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        mtrk: Mtrk {
                             certifier: "other-certifier".to_string(),
                             timeout: 1234,
-                        }),
-                    ],
+                        }
+                        .into(),
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1844,13 +1965,23 @@ mod tests {
                 Err(Error::InvalidParameter { param: "MTRK" }),
             ),
             (
-                "MAIL FROM:<> AUTH=<> AUTH=e+3Dmc2@example.com",
+                "MAIL FROM:<> AUTH=<>",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Auth("<>".to_string()),
-                        Parameter::Auth("e=mc2@example.com".to_string()),
-                    ],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        auth: "<>".to_string().into(),
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> AUTH=e+3Dmc2@example.com",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        auth: "e=mc2@example.com".to_string().into(),
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1858,10 +1989,23 @@ mod tests {
                 Err(Error::InvalidParameter { param: "AUTH" }),
             ),
             (
-                "MAIL FROM:<> MT-PRIORITY=3 MT-PRIORITY=-6",
+                "MAIL FROM:<> MT-PRIORITY=3",
                 Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![Parameter::MtPriority(3), Parameter::MtPriority(-6)],
+                    from: MailFrom {
+                        address: "".to_string(),
+                        mt_priority: 3,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> MT-PRIORITY=-6",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".to_string(),
+                        mt_priority: -6,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
@@ -1883,38 +2027,56 @@ mod tests {
                 }),
             ),
             (
-                concat!(
-                    "MAIL FROM:<> RRVS=2014-04-03T23:01:00Z ",
-                    "RRVS=1997-11-24T14:22:01-08:00;C ",
-                    "RRVS=2003-07-01T10:52:37+02:00;R"
-                ),
-                Ok(Request::Mail {
-                    from: "".to_string(),
-                    parameters: vec![
-                        Parameter::Rrvs(Rrvs::Reject(1396566060)),
-                        Parameter::Rrvs(Rrvs::Continue(880410121)),
-                        Parameter::Rrvs(Rrvs::Reject(1057049557)),
-                    ],
+                concat!("RCPT TO:<> RRVS=2014-04-03T23:01:00Z"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        rrvs: 1396566060,
+                        flags: RCPT_RRVS_REJECT,
+                        ..Default::default()
+                    },
                 }),
             ),
             (
-                "MAIL FROM:<> RRVS=",
+                concat!("RCPT TO:<> RRVS=1997-11-24T14:22:01-08:00;C"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        rrvs: 880410121,
+                        flags: RCPT_RRVS_CONTINUE,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                concat!("RCPT TO:<> RRVS=2003-07-01T10:52:37+02:00;R"),
+                Ok(Request::Rcpt {
+                    to: RcptTo {
+                        address: "".to_string(),
+                        rrvs: 1057049557,
+                        flags: RCPT_RRVS_REJECT,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "RCPT TO:<> RRVS=",
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
             (
-                "MAIL FROM:<> RRVS=2022-01-02",
+                "RCPT TO:<> RRVS=2022-01-02",
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
             (
-                "MAIL FROM:<> RRVS=2022-01-02T01:01:01",
+                "RCPT TO:<> RRVS=2022-01-02T01:01:01",
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
             (
-                "MAIL FROM:<> RRVS=2022-01-02T01:01:01ZZ",
+                "RCPT TO:<> RRVS=2022-01-02T01:01:01ZZ",
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
             (
-                "MAIL FROM:<> RRVS=ABC",
+                "RCPT TO:<> RRVS=ABC",
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
         ] {
@@ -1928,6 +2090,24 @@ mod tests {
                     "failed for {:?}",
                     request
                 );
+            }
+        }
+    }
+
+    impl From<&str> for MailFrom<String> {
+        fn from(value: &str) -> Self {
+            Self {
+                address: value.to_string(),
+                ..Default::default()
+            }
+        }
+    }
+
+    impl From<&str> for RcptTo<String> {
+        fn from(value: &str) -> Self {
+            Self {
+                address: value.to_string(),
+                ..Default::default()
             }
         }
     }

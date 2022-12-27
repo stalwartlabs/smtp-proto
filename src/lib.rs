@@ -5,53 +5,20 @@ pub mod response;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request<T> {
-    Ehlo {
-        host: T,
-    },
-    Lhlo {
-        host: T,
-    },
-    Helo {
-        host: T,
-    },
-    Mail {
-        from: T,
-        parameters: Vec<Parameter<T>>,
-    },
-    Rcpt {
-        to: T,
-        parameters: Vec<Parameter<T>>,
-    },
-    Bdat {
-        chunk_size: usize,
-        is_last: bool,
-    },
-    Auth {
-        mechanism: u64,
-        initial_response: T,
-    },
-    Noop {
-        value: T,
-    },
-    Vrfy {
-        value: T,
-    },
-    Expn {
-        value: T,
-    },
-    Help {
-        value: T,
-    },
-    Etrn {
-        name: T,
-    },
-    Atrn {
-        domains: Vec<T>,
-    },
-    Burl {
-        uri: T,
-        is_last: bool,
-    },
+    Ehlo { host: T },
+    Lhlo { host: T },
+    Helo { host: T },
+    Mail { from: MailFrom<T> },
+    Rcpt { to: RcptTo<T> },
+    Bdat { chunk_size: usize, is_last: bool },
+    Auth { mechanism: u64, initial_response: T },
+    Noop { value: T },
+    Vrfy { value: T },
+    Expn { value: T },
+    Help { value: T },
+    Etrn { name: T },
+    Atrn { domains: Vec<T> },
+    Burl { uri: T, is_last: bool },
     StartTls,
     Data,
     Rset,
@@ -59,68 +26,54 @@ pub enum Request<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Parameter<T> {
-    Body(Body),
-    Size(usize),
-    TransId(T),
-    By(By),
-    Notify(u8),
-    Orcpt(Orcpt<T>),
-    Ret(Ret),
-    EnvId(T),
-    Solicit(T),
-    Mtrk(Mtrk<T>),
-    Auth(T),
-    HoldFor(u64),
-    HoldUntil(u64),
-    MtPriority(i64),
-    Rrvs(Rrvs),
-    SmtpUtf8,
-    RequireTls,
-    ConPerm,
-    ConNeg,
+pub struct MailFrom<T> {
+    pub address: T,
+    pub flags: u64,
+    pub size: usize,
+    pub trans_id: Option<T>,
+    pub by: i64,
+    pub env_id: Option<T>,
+    pub solicit: Option<T>,
+    pub mtrk: Option<Mtrk<T>>,
+    pub auth: Option<T>,
+    pub hold_for: u64,
+    pub hold_until: u64,
+    pub mt_priority: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Body {
-    SevenBit,
-    EightBitMime,
-    BinaryMime,
+pub struct RcptTo<T> {
+    pub address: T,
+    pub orcpt: Option<(T, T)>,
+    pub rrvs: i64,
+    pub flags: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Orcpt<T> {
-    pub addr_type: T,
-    pub addr: T,
-}
+pub const MAIL_BODY_7BIT: u64 = 1 << 0;
+pub const MAIL_BODY_8BITMIME: u64 = 1 << 1;
+pub const MAIL_BODY_BINARYMIME: u64 = 1 << 2;
+pub const MAIL_RET_FULL: u64 = 1 << 3;
+pub const MAIL_RET_HDRS: u64 = 1 << 4;
+pub const MAIL_SMTPUTF8: u64 = 1 << 5;
+pub const MAIL_REQUIRETLS: u64 = 1 << 6;
+pub const MAIL_CONPERM: u64 = 1 << 7;
+pub const MAIL_BY_NOTIFY: u64 = 1 << 8;
+pub const MAIL_BY_RETURN: u64 = 1 << 9;
+pub const MAIL_BY_TRACE: u64 = 1 << 10;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Ret {
-    Full,
-    Hdrs,
-}
+pub const RCPT_NOTIFY_SUCCESS: u64 = 1 << 0;
+pub const RCPT_NOTIFY_FAILURE: u64 = 1 << 1;
+pub const RCPT_NOTIFY_DELAY: u64 = 1 << 2;
+pub const RCPT_NOTIFY_NEVER: u64 = 1 << 3;
+pub const RCPT_CONNEG: u64 = 1 << 4;
+pub const RCPT_RRVS_REJECT: u64 = 1 << 5;
+pub const RCPT_RRVS_CONTINUE: u64 = 1 << 6;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mtrk<T> {
     pub certifier: T,
     pub timeout: u64,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum By {
-    Notify { time: i64, trace: bool },
-    Return { time: i64, trace: bool },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Rrvs {
-    Reject(i64),
-    Continue(i64),
-}
-
-pub const NOTIFY_SUCCESS: u8 = 0x01;
-pub const NOTIFY_FAILURE: u8 = 0x02;
-pub const NOTIFY_DELAY: u8 = 0x04;
 
 pub const AUTH_SCRAM_SHA_256_PLUS: u64 = 1u64 << 0;
 pub const AUTH_SCRAM_SHA_256: u64 = 1u64 << 1;
@@ -267,5 +220,35 @@ impl IntoString for Vec<u8> {
     fn into_string(self) -> String {
         String::from_utf8(self)
             .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned())
+    }
+}
+
+impl<T: Default> Default for MailFrom<T> {
+    fn default() -> Self {
+        Self {
+            address: Default::default(),
+            flags: Default::default(),
+            size: Default::default(),
+            trans_id: Default::default(),
+            by: Default::default(),
+            env_id: Default::default(),
+            solicit: Default::default(),
+            mtrk: Default::default(),
+            auth: Default::default(),
+            hold_for: Default::default(),
+            hold_until: Default::default(),
+            mt_priority: Default::default(),
+        }
+    }
+}
+
+impl<T: Default> Default for RcptTo<T> {
+    fn default() -> Self {
+        Self {
+            address: Default::default(),
+            orcpt: Default::default(),
+            rrvs: Default::default(),
+            flags: Default::default(),
+        }
     }
 }
