@@ -252,3 +252,9 @@ impl<T: Default> Default for RcptTo<T> {
         }
     }
 }
+
+impl<T: Display> AsRef<EhloResponse<T>> for EhloResponse<T> {
+    fn as_ref(&self) -> &EhloResponse<T> {
+        self
+    }
+}
