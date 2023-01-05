@@ -881,7 +881,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 }
                 ENVID if self.stop_char == b'=' => {
                     let env_id = self.xtext()?;
-                    if self.stop_char.is_ascii_whitespace() && !env_id.is_empty() {
+                    if self.stop_char.is_ascii_whitespace() && (1..=100).contains(&env_id.len()) {
                         params.env_id = env_id.into();
                     } else {
                         self.seek_lf()?;
@@ -1032,17 +1032,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     }
                 },
                 ORCPT if self.stop_char == b'=' => {
-                    let addr_type = self.seek_char(b';')?;
-                    if self.stop_char != b';' {
+                    let v = self.hashed_value()?;
+                    if v != RFC822 || self.stop_char != b';' {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "ORCPT" });
                     }
                     let addr = self.xtext()?;
-                    if self.stop_char.is_ascii_whitespace()
-                        && !addr_type.is_empty()
-                        && !addr.is_empty()
-                    {
-                        params.orcpt = (addr_type, addr).into();
+                    if self.stop_char.is_ascii_whitespace() && (1..=500).contains(&addr.len()) {
+                        params.orcpt = addr.into();
                     } else {
                         self.seek_lf()?;
                         return Err(Error::InvalidParameter { param: "ORCPT" });
@@ -1802,7 +1799,7 @@ mod tests {
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
-                        orcpt: ("rfc822".to_string(), "Bob@Example.COM".to_string()).into(),
+                        orcpt: "Bob@Example.COM".to_string().into(),
                         ..Default::default()
                     },
                 }),
@@ -1812,7 +1809,7 @@ mod tests {
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
-                        orcpt: ("rfc822".to_string(), "George @Tax- ME .GOV".to_string()).into(),
+                        orcpt: "George @Tax- ME .GOV".to_string().into(),
                         ..Default::default()
                     },
                 }),

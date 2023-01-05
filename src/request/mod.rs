@@ -103,6 +103,12 @@ pub(crate) const ORCPT: u128 = (b'O' as u128)
     | (b'C' as u128) << 16
     | (b'P' as u128) << 24
     | (b'T' as u128) << 32;
+pub(crate) const RFC822: u64 = (b'R' as u64)
+    | (b'F' as u64) << 8
+    | (b'C' as u64) << 16
+    | (b'8' as u64) << 24
+    | (b'2' as u64) << 32
+    | (b'2' as u64) << 40;
 pub(crate) const RET: u128 = (b'R' as u128) | (b'E' as u128) << 8 | (b'T' as u128) << 16;
 pub(crate) const ENVID: u128 = (b'E' as u128)
     | (b'N' as u128) << 8

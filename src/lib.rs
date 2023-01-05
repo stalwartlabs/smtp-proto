@@ -44,7 +44,7 @@ pub struct MailFrom<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RcptTo<T> {
     pub address: T,
-    pub orcpt: Option<(T, T)>,
+    pub orcpt: Option<T>,
     pub rrvs: i64,
     pub flags: u64,
 }
