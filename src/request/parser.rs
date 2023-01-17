@@ -12,6 +12,7 @@ impl Request<String> {
         let mut parser = Rfc5321Parser::new(bytes);
         let command = parser.hashed_value()?;
         if !parser.stop_char.is_ascii_whitespace() {
+            parser.seek_lf()?;
             return Err(Error::UnknownCommand);
         }
 
