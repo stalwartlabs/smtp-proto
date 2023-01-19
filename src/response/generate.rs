@@ -25,8 +25,8 @@ impl<T: Display> EhloResponse<T> {
         let mut capabilities = self.capabilities;
 
         while capabilities != 0 {
-            let capability = 31 - capabilities.leading_zeros();
-            capabilities ^= 1 << capability;
+            let capability = 1 << (31 - capabilities.leading_zeros());
+            capabilities ^= capability;
 
             writer.write_all(b"250")?;
             writer.write_all(if capabilities != 0 { b"-" } else { b" " })?;
@@ -37,8 +37,8 @@ impl<T: Display> EhloResponse<T> {
                     writer.write_all(b"AUTH")?;
                     let mut mechanisms = self.auth_mechanisms;
                     while mechanisms != 0 {
-                        let item = 63 - mechanisms.leading_zeros();
-                        mechanisms ^= 1 << item;
+                        let item = 1 << (63 - mechanisms.leading_zeros());
+                        mechanisms ^= item;
                         write!(writer, " {}", (item as u64).to_mechanism())?;
                     }
                     writer.write_all(b"\r\n")
