@@ -11,6 +11,9 @@ pub struct ResponseReceiver {
     buf: Vec<u8>,
     code: u16,
     esc: [u8; 3],
+    esc_cur: [u8; 3],
+    esc_restore: [u8; 10],
+    esc_pos: usize,
     is_last: bool,
     pos: usize,
 }
@@ -19,7 +22,10 @@ impl ResponseReceiver {
     pub fn from_code(code: u16) -> Self {
         Self {
             code,
-            esc: [0, 0, 0],
+            esc: [0u8; 3],
+            esc_cur: [0u8; 3],
+            esc_restore: [0u8; 10],
+            esc_pos: 0,
             pos: 3,
             is_last: false,
             buf: Vec::new(),
@@ -64,23 +70,61 @@ impl ResponseReceiver {
                         });
                     }
                 },
-                4 | 5 | 6 => match ch {
-                    b'0'..=b'9' => {
-                        if self.buf.is_empty() {
-                            let code = &mut self.esc[self.pos - 4];
-                            *code = code.saturating_mul(10).saturating_add(ch - b'0');
+                4 | 5 | 6 => {
+                    let mut do_restore = false;
+
+                    match ch {
+                        b'0'..=b'9' => {
+                            let code = &mut self.esc_cur[self.pos - 4];
+                            if *code < 100 {
+                                if let Some(restore) = self.esc_restore.get_mut(self.esc_pos) {
+                                    *restore = ch;
+                                    *code = code.saturating_mul(10).saturating_add(ch - b'0');
+                                    self.esc_pos += 1;
+                                } else {
+                                    do_restore = true;
+                                }
+                            } else {
+                                do_restore = true;
+                            }
+                        }
+                        b'.' if self.pos < 6 && self.esc_cur[self.pos - 4] > 0 => {
+                            if let Some(restore) = self.esc_restore.get_mut(self.esc_pos) {
+                                *restore = ch;
+                                self.pos += 1;
+                                self.esc_pos += 1;
+                            } else {
+                                do_restore = true;
+                            }
+                        }
+                        b' ' | b'\r' | b'\n' if self.pos == 6 => {
+                            self.esc = self.esc_cur;
+                            self.esc_cur.fill(0);
+                            self.esc_restore.fill(0);
+                            self.pos = 7;
+                            self.esc_pos = 0;
+                        }
+                        _ => {
+                            do_restore = true;
                         }
                     }
-                    b'.' if self.pos < 6 && self.esc[self.pos - 4] > 0 => {
-                        self.pos += 1;
-                    }
-                    _ => {
-                        if !ch.is_ascii_whitespace() {
-                            self.buf.push(ch);
+
+                    if do_restore {
+                        // ESC parsing failed, restore parsed digits
+                        for &rch in &self.esc_restore {
+                            if rch != 0 {
+                                self.buf.push(rch);
+                            } else {
+                                break;
+                            }
                         }
+                        self.buf.push(ch);
                         self.pos = 7;
+                        self.esc_pos = 0;
+                        self.esc_cur.fill(0);
+                        self.esc_restore.fill(0);
                     }
-                },
+                }
                 _ => match ch {
                     b'\r' | b'\n' => (),
                     _ => {
@@ -519,7 +563,43 @@ mod tests {
                 Response {
                     code: 432,
                     esc: [6, 8, 9],
-                    message: "\nHello\n\n,\n\n\n\n\n\nWorld!".to_string(),
+                    message: "\nHello\n\n,\n\n\n6\n\n6.\n\n6.8\n\n\nWorld!".to_string(),
+                },
+                true,
+            ),
+            (
+                concat!("250 2address.org\n"),
+                Response {
+                    code: 250,
+                    esc: [0, 0, 0],
+                    message: "2address.org".to_string(),
+                },
+                true,
+            ),
+            (
+                concat!("250 100.address.org\n"),
+                Response {
+                    code: 250,
+                    esc: [0, 0, 0],
+                    message: "100.address.org".to_string(),
+                },
+                true,
+            ),
+            (
+                concat!("250 111111111111\n"),
+                Response {
+                    code: 250,
+                    esc: [0, 0, 0],
+                    message: "111111111111".to_string(),
+                },
+                true,
+            ),
+            (
+                concat!("250 99999999999999\n"),
+                Response {
+                    code: 250,
+                    esc: [0, 0, 0],
+                    message: "99999999999999".to_string(),
                 },
                 true,
             ),
