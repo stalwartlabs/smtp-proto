@@ -88,7 +88,7 @@ impl ResponseReceiver {
                                 do_restore = true;
                             }
                         }
-                        b'.' if self.pos < 6 && self.esc_cur[self.pos - 4] > 0 => {
+                        b'.' if self.pos < 6 => {
                             if let Some(restore) = self.esc_restore.get_mut(self.esc_pos) {
                                 *restore = ch;
                                 self.pos += 1;
@@ -100,7 +100,6 @@ impl ResponseReceiver {
                         b' ' | b'\r' | b'\n' if self.pos == 6 => {
                             self.esc = self.esc_cur;
                             self.esc_cur.fill(0);
-                            self.esc_restore.fill(0);
                             self.pos = 7;
                             self.esc_pos = 0;
                         }
@@ -108,21 +107,16 @@ impl ResponseReceiver {
                             do_restore = true;
                         }
                     }
-
                     if do_restore {
                         // ESC parsing failed, restore parsed digits
-                        for &rch in &self.esc_restore {
-                            if rch != 0 {
-                                self.buf.push(rch);
-                            } else {
-                                break;
-                            }
+                        if self.esc_pos > 0 {
+                            self.buf
+                                .extend_from_slice(&self.esc_restore[..self.esc_pos]);
                         }
                         self.buf.push(ch);
                         self.pos = 7;
                         self.esc_pos = 0;
                         self.esc_cur.fill(0);
-                        self.esc_restore.fill(0);
                     }
                 }
                 _ => match ch {
@@ -158,7 +152,10 @@ impl ResponseReceiver {
         self.is_last = false;
         self.code = 0;
         self.esc.fill(0);
+        self.esc_cur.fill(0);
         self.pos = 0;
+        self.esc_pos = 0;
+        self.buf.clear();
     }
 }
 
@@ -600,6 +597,15 @@ mod tests {
                     code: 250,
                     esc: [0, 0, 0],
                     message: "99999999999999".to_string(),
+                },
+                true,
+            ),
+            (
+                concat!("250 2.0.0 Message queued for delivery.\r\n"),
+                Response {
+                    code: 250,
+                    esc: [2, 0, 0],
+                    message: "Message queued for delivery.".to_string(),
                 },
                 true,
             ),
