@@ -1,3 +1,26 @@
+/*
+ * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ *
+ * This file is part of the Stalwart SMTP protocol parser.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
 use std::{
     fmt::Display,
     io::{self, Write},
@@ -39,7 +62,7 @@ impl<T: Display> EhloResponse<T> {
                     while mechanisms != 0 {
                         let item = 1 << (63 - mechanisms.leading_zeros());
                         mechanisms ^= item;
-                        write!(writer, " {}", (item as u64).to_mechanism())?;
+                        write!(writer, " {}", item.to_mechanism())?;
                     }
                     writer.write_all(b"\r\n")
                 }
@@ -79,7 +102,7 @@ impl<T: Display> EhloResponse<T> {
                 EXT_MTRK => write!(writer, "MTRK\r\n"),
                 EXT_NO_SOLICITING => {
                     if let Some(keywords) = &self.no_soliciting {
-                        write!(writer, "NO-SOLICITING {}\r\n", keywords)
+                        write!(writer, "NO-SOLICITING {keywords}\r\n")
                     } else {
                         write!(writer, "NO-SOLICITING\r\n")
                     }

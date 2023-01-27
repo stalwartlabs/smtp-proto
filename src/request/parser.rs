@@ -1,3 +1,26 @@
+/*
+ * Copyright (c) 2020-2023, Stalwart Labs Ltd.
+ *
+ * This file is part of the Stalwart SMTP protocol parser.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
 use std::slice::Iter;
 
 use crate::*;
@@ -6,6 +29,9 @@ use super::*;
 
 #[derive(Default)]
 pub struct RequestParser {}
+
+const MAX_ADDRESS_LEN: usize = 256;
+const MAX_DOMAIN_LEN: usize = 255;
 
 impl Request<String> {
     pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
@@ -70,7 +96,7 @@ impl Request<String> {
                 if parser.stop_char != LF {
                     let host = parser.text()?;
                     parser.seek_lf()?;
-                    if !host.is_empty() {
+                    if (1..=MAX_DOMAIN_LEN).contains(&host.len()) {
                         return Ok(Request::Ehlo { host });
                     }
                 }
@@ -136,7 +162,7 @@ impl Request<String> {
                 if parser.stop_char != LF {
                     let value = parser.string()?;
                     parser.seek_lf()?;
-                    if !value.is_empty() {
+                    if (1..=MAX_ADDRESS_LEN).contains(&value.len()) {
                         return Ok(Request::Expn { value });
                     }
                 }
@@ -163,7 +189,7 @@ impl Request<String> {
                 if parser.stop_char != LF {
                     let host = parser.text()?;
                     parser.seek_lf()?;
-                    if !host.is_empty() {
+                    if (1..=MAX_DOMAIN_LEN).contains(&host.len()) {
                         return Ok(Request::Lhlo { host });
                     }
                 }
@@ -179,7 +205,7 @@ impl Request<String> {
                 if parser.stop_char != LF {
                     let value = parser.string()?;
                     parser.seek_lf()?;
-                    if !value.is_empty() {
+                    if (1..=MAX_ADDRESS_LEN).contains(&value.len()) {
                         return Ok(Request::Vrfy { value });
                     }
                 }
@@ -272,7 +298,7 @@ impl Request<String> {
                 if parser.stop_char != LF {
                     let host = parser.text()?;
                     parser.seek_lf()?;
-                    if !host.is_empty() {
+                    if (1..=MAX_DOMAIN_LEN).contains(&host.len()) {
                         return Ok(Request::Helo { host });
                     }
                 }
@@ -423,11 +449,13 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     self.stop_char = ch;
                     let value = value.into_string();
                     let len = value.chars().count();
-                    return Ok(if len == 0 || len < 255 && at_count == 1 && lp_len > 0 {
-                        value.into()
-                    } else {
-                        None
-                    });
+                    return Ok(
+                        if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
+                            value.into()
+                        } else {
+                            None
+                        },
+                    );
                 }
                 b'\r' => (),
                 b':' if !in_quote && matches!(value.first(), Some(b'@')) => {
@@ -442,22 +470,26 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                         self.stop_char = b' ';
                         let value = value.into_string();
                         let len = value.chars().count();
-                        return Ok(if len == 0 || len < 255 && at_count == 1 && lp_len > 0 {
-                            value.into()
-                        } else {
-                            None
-                        });
+                        return Ok(
+                            if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
+                                value.into()
+                            } else {
+                                None
+                            },
+                        );
                     }
                 }
                 b'\n' => {
                     self.stop_char = b'\n';
                     let value = value.into_string();
                     let len = value.chars().count();
-                    return Ok(if len == 0 || len < 255 && at_count == 1 && lp_len > 0 {
-                        value.into()
-                    } else {
-                        None
-                    });
+                    return Ok(
+                        if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
+                            value.into()
+                        } else {
+                            None
+                        },
+                    );
                 }
                 b'\"' if !in_quote || last_ch != b'\\' => {
                     in_quote = !in_quote;
@@ -937,7 +969,9 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 }
                 AUTH_ if self.stop_char == b'=' => {
                     let mailbox = self.xtext()?;
-                    if !mailbox.is_empty() && self.stop_char.is_ascii_whitespace() {
+                    if (1..=MAX_ADDRESS_LEN).contains(&mailbox.len())
+                        && self.stop_char.is_ascii_whitespace()
+                    {
                         params.auth = mailbox.into();
                     } else {
                         self.seek_lf()?;
@@ -1039,7 +1073,9 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                         return Err(Error::InvalidParameter { param: "ORCPT" });
                     }
                     let addr = self.xtext()?;
-                    if self.stop_char.is_ascii_whitespace() && (1..=500).contains(&addr.len()) {
+                    if self.stop_char.is_ascii_whitespace()
+                        && (1..=MAX_ADDRESS_LEN).contains(&addr.len())
+                    {
                         params.orcpt = addr.into();
                     } else {
                         self.seek_lf()?;
@@ -2081,12 +2117,11 @@ mod tests {
             let (request, parsed_request): (&str, Result<Request<String>, Error>) = item;
 
             for extra in ["\n", "\r\n", " \n", " \r\n"] {
-                let request = format!("{}{}", request, extra);
+                let request = format!("{request}{extra}");
                 assert_eq!(
                     parsed_request,
                     Request::parse(&mut request.as_bytes().iter()),
-                    "failed for {:?}",
-                    request
+                    "failed for {request:?}"
                 );
             }
         }

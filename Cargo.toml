@@ -1,5 +1,13 @@
 [package]
 name = "smtp-proto"
+description = "SMTP protocol parser"
+authors = [ "Stalwart Labs <hello@stalw.art>"]
+repository = "https://github.com/stalwartlabs/smtp-proto"
+homepage = "https://github.com/stalwartlabs/smtp-proto"
+license = "AGPL-3.0-only"
+keywords = ["smtp", "lmtp", "protocol", "parser"]
+categories = ["email", "parser-implementations"]
+readme = "README.md"
 version = "0.1.0"
 edition = "2021"
 
