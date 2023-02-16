@@ -27,7 +27,7 @@ use crate::{request::parser::Rfc5321Parser, *};
 
 use super::*;
 
-pub const MAX_REPONSE_LENGTH: usize = 4096;
+pub const MAX_RESPONSE_LENGTH: usize = 4096;
 
 #[derive(Default)]
 pub struct ResponseReceiver {
@@ -145,7 +145,7 @@ impl ResponseReceiver {
                 _ => match ch {
                     b'\r' | b'\n' => (),
                     _ => {
-                        if self.buf.len() < MAX_REPONSE_LENGTH {
+                        if self.buf.len() < MAX_RESPONSE_LENGTH {
                             self.buf.push(ch);
                         } else {
                             return Err(Error::ResponseTooLong);
@@ -351,7 +351,7 @@ impl EhloResponse<String> {
                             parser.seek_lf()?;
                             break;
                         }
-                        ch if buf.len() < MAX_REPONSE_LENGTH => {
+                        ch if buf.len() < MAX_RESPONSE_LENGTH => {
                             buf.push(ch);
                         }
                         _ => return Err(Error::ResponseTooLong),
