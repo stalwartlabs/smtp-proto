@@ -583,19 +583,15 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     return Ok(value.into_string());
                 }
                 b'+' => {
-                    let mut hex1 = 0;
+                    let mut hex1 = None;
 
                     while let Some(&ch) = self.bytes.next() {
-                        if ch.is_ascii_hexdigit() {
-                            if hex1 != 0 {
-                                let hex1 = HEX_MAP[hex1 as usize];
-                                let hex2 = HEX_MAP[ch as usize];
-                                if hex1 != -1 && hex2 != -1 {
-                                    value.push(((hex1 as u8) << 4) | hex2 as u8);
-                                }
+                        if let Some(digit) = char::from(ch).to_digit(16) {
+                            if let Some(hex1) = hex1 {
+                                value.push(((hex1 as u8) << 4) | digit as u8);
                                 break;
                             } else {
-                                hex1 = ch;
+                                hex1 = Some(digit);
                             }
                         } else if ch == LF {
                             self.stop_char = b'\n';
