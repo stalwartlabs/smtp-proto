@@ -71,7 +71,7 @@ impl RequestReceiver {
                 Err(Error::NeedsMoreData { bytes_left }) => {
                     if bytes_left > 0 {
                         if bytes_left < MAX_LINE_LENGTH {
-                            self.buf = buf[buf.len() - bytes_left..].to_vec();
+                            self.buf = buf[buf.len().saturating_sub(bytes_left)..].to_vec();
                         } else {
                             return Err(Error::ResponseTooLong);
                         }
