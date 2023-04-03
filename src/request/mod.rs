@@ -21,657 +21,120 @@
  * for more details.
 */
 
+use crate::tokens::{define_tokens_64, define_tokens_128};
+
 pub mod parser;
 pub mod receiver;
 
-// SMTP commands
-pub(crate) const EHLO: u64 =
-    (b'E' as u64) | (b'H' as u64) << 8 | (b'L' as u64) << 16 | (b'O' as u64) << 24;
-pub(crate) const HELO: u64 =
-    (b'H' as u64) | (b'E' as u64) << 8 | (b'L' as u64) << 16 | (b'O' as u64) << 24;
-pub(crate) const LHLO: u64 =
-    (b'L' as u64) | (b'H' as u64) << 8 | (b'L' as u64) << 16 | (b'O' as u64) << 24;
-pub(crate) const MAIL: u64 =
-    (b'M' as u64) | (b'A' as u64) << 8 | (b'I' as u64) << 16 | (b'L' as u64) << 24;
-pub(crate) const RCPT: u64 =
-    (b'R' as u64) | (b'C' as u64) << 8 | (b'P' as u64) << 16 | (b'T' as u64) << 24;
-pub(crate) const DATA: u64 =
-    (b'D' as u64) | (b'A' as u64) << 8 | (b'T' as u64) << 16 | (b'A' as u64) << 24;
-pub(crate) const BDAT: u64 =
-    (b'B' as u64) | (b'D' as u64) << 8 | (b'A' as u64) << 16 | (b'T' as u64) << 24;
-pub(crate) const RSET: u64 =
-    (b'R' as u64) | (b'S' as u64) << 8 | (b'E' as u64) << 16 | (b'T' as u64) << 24;
-pub(crate) const VRFY: u64 =
-    (b'V' as u64) | (b'R' as u64) << 8 | (b'F' as u64) << 16 | (b'Y' as u64) << 24;
-pub(crate) const EXPN: u64 =
-    (b'E' as u64) | (b'X' as u64) << 8 | (b'P' as u64) << 16 | (b'N' as u64) << 24;
-pub(crate) const HELP: u64 =
-    (b'H' as u64) | (b'E' as u64) << 8 | (b'L' as u64) << 16 | (b'P' as u64) << 24;
-pub(crate) const NOOP: u64 =
-    (b'N' as u64) | (b'O' as u64) << 8 | (b'O' as u64) << 16 | (b'P' as u64) << 24;
-pub(crate) const QUIT: u64 =
-    (b'Q' as u64) | (b'U' as u64) << 8 | (b'I' as u64) << 16 | (b'T' as u64) << 24;
-pub(crate) const ETRN: u64 =
-    (b'E' as u64) | (b'T' as u64) << 8 | (b'R' as u64) << 16 | (b'N' as u64) << 24;
-pub(crate) const ATRN: u64 =
-    (b'A' as u64) | (b'T' as u64) << 8 | (b'R' as u64) << 16 | (b'N' as u64) << 24;
-pub const AUTH: u64 =
-    (b'A' as u64) | (b'U' as u64) << 8 | (b'T' as u64) << 16 | (b'H' as u64) << 24;
-pub(crate) const BURL: u64 =
-    (b'B' as u64) | (b'U' as u64) << 8 | (b'R' as u64) << 16 | (b'L' as u64) << 24;
-pub(crate) const STARTTLS: u64 = (b'S' as u64)
-    | (b'T' as u64) << 8
-    | (b'A' as u64) << 16
-    | (b'R' as u64) << 24
-    | (b'T' as u64) << 32
-    | (b'T' as u64) << 40
-    | (b'L' as u64) << 48
-    | (b'S' as u64) << 56;
+pub const AUTH: u64 = crate::tokens::token64("AUTH"); // special, because it is `pub` instead of `pub(crate)`
 
-// Arguments
-pub(crate) const FROM: u64 =
-    (b'F' as u64) | (b'R' as u64) << 8 | (b'O' as u64) << 16 | (b'M' as u64) << 24;
-pub(crate) const TO: u64 = (b'T' as u64) | (b'O' as u64) << 8;
-pub(crate) const LAST: u64 =
-    (b'L' as u64) | (b'A' as u64) << 8 | (b'S' as u64) << 16 | (b'T' as u64) << 24;
+define_tokens_64! {
+    // SMTP commands
+    EHLO,
+    HELO,
+    LHLO,
+    MAIL,
+    RCPT,
+    DATA,
+    BDAT,
+    RSET,
+    VRFY,
+    EXPN,
+    HELP,
+    NOOP,
+    QUIT,
+    ETRN,
+    ATRN,
+    BURL,
+    STARTTLS,
 
-// Parameters
-pub(crate) const BODY: u128 =
-    (b'B' as u128) | (b'O' as u128) << 8 | (b'D' as u128) << 16 | (b'Y' as u128) << 24;
-pub(crate) const SEVENBIT: u128 =
-    (b'7' as u128) | (b'B' as u128) << 8 | (b'I' as u128) << 16 | (b'T' as u128) << 24;
-pub(crate) const EIGHBITMIME: u128 = (b'8' as u128)
-    | (b'B' as u128) << 8
-    | (b'I' as u128) << 16
-    | (b'T' as u128) << 24
-    | (b'M' as u128) << 32
-    | (b'I' as u128) << 40
-    | (b'M' as u128) << 48
-    | (b'E' as u128) << 56;
-pub(crate) const BINARYMIME: u128 = (b'B' as u128)
-    | (b'I' as u128) << 8
-    | (b'N' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'R' as u128) << 32
-    | (b'Y' as u128) << 40
-    | (b'M' as u128) << 48
-    | (b'I' as u128) << 56
-    | (b'M' as u128) << 64
-    | (b'E' as u128) << 72;
-pub(crate) const SIZE: u128 =
-    (b'S' as u128) | (b'I' as u128) << 8 | (b'Z' as u128) << 16 | (b'E' as u128) << 24;
-pub(crate) const TRANSID: u128 = (b'T' as u128)
-    | (b'R' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'N' as u128) << 24
-    | (b'S' as u128) << 32
-    | (b'I' as u128) << 40
-    | (b'D' as u128) << 48;
-pub(crate) const BY: u128 = (b'B' as u128) | (b'Y' as u128) << 8;
+    // Arguments
+    FROM,
+    TO,
+    LAST,
 
-pub(crate) const N: u64 = b'N' as u64;
-pub(crate) const NT: u64 = (b'N' as u64) | (b'T' as u64) << 8;
-pub(crate) const C: u64 = b'C' as u64;
-pub(crate) const R: u64 = b'R' as u64;
-pub(crate) const RT: u64 = (b'R' as u64) | (b'T' as u64) << 8;
+    // Parameters
+    N,
+    NT,
+    C,
+    R,
+    RT,
+    FULL,
+    HDRS,
+    RFC822,
+}
 
-pub(crate) const NOTIFY: u128 = (b'N' as u128)
-    | (b'O' as u128) << 8
-    | (b'T' as u128) << 16
-    | (b'I' as u128) << 24
-    | (b'F' as u128) << 32
-    | (b'Y' as u128) << 40;
-pub(crate) const ORCPT: u128 = (b'O' as u128)
-    | (b'R' as u128) << 8
-    | (b'C' as u128) << 16
-    | (b'P' as u128) << 24
-    | (b'T' as u128) << 32;
-pub(crate) const RFC822: u64 = (b'R' as u64)
-    | (b'F' as u64) << 8
-    | (b'C' as u64) << 16
-    | (b'8' as u64) << 24
-    | (b'2' as u64) << 32
-    | (b'2' as u64) << 40;
-pub(crate) const RET: u128 = (b'R' as u128) | (b'E' as u128) << 8 | (b'T' as u128) << 16;
-pub(crate) const ENVID: u128 = (b'E' as u128)
-    | (b'N' as u128) << 8
-    | (b'V' as u128) << 16
-    | (b'I' as u128) << 24
-    | (b'D' as u128) << 32;
-pub(crate) const NEVER: u128 = (b'N' as u128)
-    | (b'E' as u128) << 8
-    | (b'V' as u128) << 16
-    | (b'E' as u128) << 24
-    | (b'R' as u128) << 32;
-pub(crate) const SUCCESS: u128 = (b'S' as u128)
-    | (b'U' as u128) << 8
-    | (b'C' as u128) << 16
-    | (b'C' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'S' as u128) << 40
-    | (b'S' as u128) << 48;
-pub(crate) const FAILURE: u128 = (b'F' as u128)
-    | (b'A' as u128) << 8
-    | (b'I' as u128) << 16
-    | (b'L' as u128) << 24
-    | (b'U' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'E' as u128) << 48;
-pub(crate) const DELAY: u128 = (b'D' as u128)
-    | (b'E' as u128) << 8
-    | (b'L' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'Y' as u128) << 32;
-pub(crate) const FULL: u64 =
-    (b'F' as u64) | (b'U' as u64) << 8 | (b'L' as u64) << 16 | (b'L' as u64) << 24;
-pub(crate) const HDRS: u64 =
-    (b'H' as u64) | (b'D' as u64) << 8 | (b'R' as u64) << 16 | (b'S' as u64) << 24;
-pub(crate) const SOLICIT: u128 = (b'S' as u128)
-    | (b'O' as u128) << 8
-    | (b'L' as u128) << 16
-    | (b'I' as u128) << 24
-    | (b'C' as u128) << 32
-    | (b'I' as u128) << 40
-    | (b'T' as u128) << 48;
-pub(crate) const MTRK: u128 =
-    (b'M' as u128) | (b'T' as u128) << 8 | (b'R' as u128) << 16 | (b'K' as u128) << 24;
-pub(crate) const AUTH_: u128 =
-    (b'A' as u128) | (b'U' as u128) << 8 | (b'T' as u128) << 16 | (b'H' as u128) << 24;
-pub(crate) const HOLDFOR: u128 = (b'H' as u128)
-    | (b'O' as u128) << 8
-    | (b'L' as u128) << 16
-    | (b'D' as u128) << 24
-    | (b'F' as u128) << 32
-    | (b'O' as u128) << 40
-    | (b'R' as u128) << 48;
-pub(crate) const HOLDUNTIL: u128 = (b'H' as u128)
-    | (b'O' as u128) << 8
-    | (b'L' as u128) << 16
-    | (b'D' as u128) << 24
-    | (b'U' as u128) << 32
-    | (b'N' as u128) << 40
-    | (b'T' as u128) << 48
-    | (b'I' as u128) << 56
-    | (b'L' as u128) << 64;
-pub(crate) const SMTPUTF8: u128 = (b'S' as u128)
-    | (b'M' as u128) << 8
-    | (b'T' as u128) << 16
-    | (b'P' as u128) << 24
-    | (b'U' as u128) << 32
-    | (b'T' as u128) << 40
-    | (b'F' as u128) << 48
-    | (b'8' as u128) << 56;
-pub(crate) const CONPERM: u128 = (b'C' as u128)
-    | (b'O' as u128) << 8
-    | (b'N' as u128) << 16
-    | (b'P' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'M' as u128) << 48;
-pub(crate) const CONNEG: u128 = (b'C' as u128)
-    | (b'O' as u128) << 8
-    | (b'N' as u128) << 16
-    | (b'N' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'G' as u128) << 40;
-pub(crate) const MT_PRIORITY: u128 = (b'M' as u128)
-    | (b'T' as u128) << 8
-    | (b'-' as u128) << 16
-    | (b'P' as u128) << 24
-    | (b'R' as u128) << 32
-    | (b'I' as u128) << 40
-    | (b'O' as u128) << 48
-    | (b'R' as u128) << 56
-    | (b'I' as u128) << 64
-    | (b'T' as u128) << 72
-    | (b'Y' as u128) << 80;
-pub(crate) const RRVS: u128 =
-    (b'R' as u128) | (b'R' as u128) << 8 | (b'V' as u128) << 16 | (b'S' as u128) << 24;
-pub(crate) const REQUIRETLS: u128 = (b'R' as u128)
-    | (b'E' as u128) << 8
-    | (b'Q' as u128) << 16
-    | (b'U' as u128) << 24
-    | (b'I' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'E' as u128) << 48
-    | (b'T' as u128) << 56
-    | (b'L' as u128) << 64
-    | (b'S' as u128) << 72;
-
-// SASL Mechanisms
-pub(crate) const _9798_M_DSA_SHA1: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'M' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'D' as u128) << 56
-    | (b'S' as u128) << 64
-    | (b'A' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'S' as u128) << 88
-    | (b'H' as u128) << 96
-    | (b'A' as u128) << 104
-    | (b'1' as u128) << 112;
-pub(crate) const _9798_M_ECDSA_SHA: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'M' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'E' as u128) << 56
-    | (b'C' as u128) << 64
-    | (b'D' as u128) << 72
-    | (b'S' as u128) << 80
-    | (b'A' as u128) << 88
-    | (b'-' as u128) << 96
-    | (b'S' as u128) << 104
-    | (b'H' as u128) << 112
-    | (b'A' as u128) << 120;
-pub(crate) const _9798_M_RSA_SHA1_: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'M' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'R' as u128) << 56
-    | (b'S' as u128) << 64
-    | (b'A' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'S' as u128) << 88
-    | (b'H' as u128) << 96
-    | (b'A' as u128) << 104
-    | (b'1' as u128) << 112
-    | (b'-' as u128) << 120;
-pub(crate) const _9798_U_DSA_SHA1: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'U' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'D' as u128) << 56
-    | (b'S' as u128) << 64
-    | (b'A' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'S' as u128) << 88
-    | (b'H' as u128) << 96
-    | (b'A' as u128) << 104
-    | (b'1' as u128) << 112;
-pub(crate) const _9798_U_ECDSA_SHA: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'U' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'E' as u128) << 56
-    | (b'C' as u128) << 64
-    | (b'D' as u128) << 72
-    | (b'S' as u128) << 80
-    | (b'A' as u128) << 88
-    | (b'-' as u128) << 96
-    | (b'S' as u128) << 104
-    | (b'H' as u128) << 112
-    | (b'A' as u128) << 120;
-pub(crate) const _9798_U_RSA_SHA1_: u128 = (b'9' as u128)
-    | (b'7' as u128) << 8
-    | (b'9' as u128) << 16
-    | (b'8' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'U' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'R' as u128) << 56
-    | (b'S' as u128) << 64
-    | (b'A' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'S' as u128) << 88
-    | (b'H' as u128) << 96
-    | (b'A' as u128) << 104
-    | (b'1' as u128) << 112
-    | (b'-' as u128) << 120;
-pub(crate) const ANONYMOUS: u128 = (b'A' as u128)
-    | (b'N' as u128) << 8
-    | (b'O' as u128) << 16
-    | (b'N' as u128) << 24
-    | (b'Y' as u128) << 32
-    | (b'M' as u128) << 40
-    | (b'O' as u128) << 48
-    | (b'U' as u128) << 56
-    | (b'S' as u128) << 64;
-pub(crate) const CRAM_MD5: u128 = (b'C' as u128)
-    | (b'R' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'M' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'M' as u128) << 40
-    | (b'D' as u128) << 48
-    | (b'5' as u128) << 56;
-pub(crate) const DIGEST_MD5: u128 = (b'D' as u128)
-    | (b'I' as u128) << 8
-    | (b'G' as u128) << 16
-    | (b'E' as u128) << 24
-    | (b'S' as u128) << 32
-    | (b'T' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'M' as u128) << 56
-    | (b'D' as u128) << 64
-    | (b'5' as u128) << 72;
-pub(crate) const EAP_AES128: u128 = (b'E' as u128)
-    | (b'A' as u128) << 8
-    | (b'P' as u128) << 16
-    | (b'-' as u128) << 24
-    | (b'A' as u128) << 32
-    | (b'E' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'1' as u128) << 56
-    | (b'2' as u128) << 64
-    | (b'8' as u128) << 72;
-pub(crate) const EAP_AES128_PLUS: u128 = (b'E' as u128)
-    | (b'A' as u128) << 8
-    | (b'P' as u128) << 16
-    | (b'-' as u128) << 24
-    | (b'A' as u128) << 32
-    | (b'E' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'1' as u128) << 56
-    | (b'2' as u128) << 64
-    | (b'8' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'P' as u128) << 88
-    | (b'L' as u128) << 96
-    | (b'U' as u128) << 104
-    | (b'S' as u128) << 112;
-pub(crate) const ECDH_X25519_CHAL: u128 = (b'E' as u128)
-    | (b'C' as u128) << 8
-    | (b'D' as u128) << 16
-    | (b'H' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'X' as u128) << 40
-    | (b'2' as u128) << 48
-    | (b'5' as u128) << 56
-    | (b'5' as u128) << 64
-    | (b'1' as u128) << 72
-    | (b'9' as u128) << 80
-    | (b'-' as u128) << 88
-    | (b'C' as u128) << 96
-    | (b'H' as u128) << 104
-    | (b'A' as u128) << 112
-    | (b'L' as u128) << 120;
-pub(crate) const ECDSA_NIST256P_C: u128 = (b'E' as u128)
-    | (b'C' as u128) << 8
-    | (b'D' as u128) << 16
-    | (b'S' as u128) << 24
-    | (b'A' as u128) << 32
-    | (b'-' as u128) << 40
-    | (b'N' as u128) << 48
-    | (b'I' as u128) << 56
-    | (b'S' as u128) << 64
-    | (b'T' as u128) << 72
-    | (b'2' as u128) << 80
-    | (b'5' as u128) << 88
-    | (b'6' as u128) << 96
-    | (b'P' as u128) << 104
-    | (b'-' as u128) << 112
-    | (b'C' as u128) << 120;
-pub(crate) const EXTERNAL: u128 = (b'E' as u128)
-    | (b'X' as u128) << 8
-    | (b'T' as u128) << 16
-    | (b'E' as u128) << 24
-    | (b'R' as u128) << 32
-    | (b'N' as u128) << 40
-    | (b'A' as u128) << 48
-    | (b'L' as u128) << 56;
-pub(crate) const GS2_KRB5: u128 = (b'G' as u128)
-    | (b'S' as u128) << 8
-    | (b'2' as u128) << 16
-    | (b'-' as u128) << 24
-    | (b'K' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'B' as u128) << 48
-    | (b'5' as u128) << 56;
-pub(crate) const GS2_KRB5_PLUS: u128 = (b'G' as u128)
-    | (b'S' as u128) << 8
-    | (b'2' as u128) << 16
-    | (b'-' as u128) << 24
-    | (b'K' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'B' as u128) << 48
-    | (b'5' as u128) << 56
-    | (b'-' as u128) << 64
-    | (b'P' as u128) << 72
-    | (b'L' as u128) << 80
-    | (b'U' as u128) << 88
-    | (b'S' as u128) << 96;
-pub(crate) const GSS_SPNEGO: u128 = (b'G' as u128)
-    | (b'S' as u128) << 8
-    | (b'S' as u128) << 16
-    | (b'-' as u128) << 24
-    | (b'S' as u128) << 32
-    | (b'P' as u128) << 40
-    | (b'N' as u128) << 48
-    | (b'E' as u128) << 56
-    | (b'G' as u128) << 64
-    | (b'O' as u128) << 72;
-pub(crate) const GSSAPI: u128 = (b'G' as u128)
-    | (b'S' as u128) << 8
-    | (b'S' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'P' as u128) << 32
-    | (b'I' as u128) << 40;
-pub(crate) const KERBEROS_V4: u128 = (b'K' as u128)
-    | (b'E' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'B' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'O' as u128) << 48
-    | (b'S' as u128) << 56
-    | (b'_' as u128) << 64
-    | (b'V' as u128) << 72
-    | (b'4' as u128) << 80;
-pub(crate) const KERBEROS_V5: u128 = (b'K' as u128)
-    | (b'E' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'B' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'O' as u128) << 48
-    | (b'S' as u128) << 56
-    | (b'_' as u128) << 64
-    | (b'V' as u128) << 72
-    | (b'5' as u128) << 80;
-pub(crate) const LOGIN: u128 = (b'L' as u128)
-    | (b'O' as u128) << 8
-    | (b'G' as u128) << 16
-    | (b'I' as u128) << 24
-    | (b'N' as u128) << 32;
-pub(crate) const NMAS_SAMBA_AUTH: u128 = (b'N' as u128)
-    | (b'M' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'S' as u128) << 24
-    | (b'-' as u128) << 32
-    | (b'S' as u128) << 40
-    | (b'A' as u128) << 48
-    | (b'M' as u128) << 56
-    | (b'B' as u128) << 64
-    | (b'A' as u128) << 72
-    | (b'-' as u128) << 80
-    | (b'A' as u128) << 88
-    | (b'U' as u128) << 96
-    | (b'T' as u128) << 104
-    | (b'H' as u128) << 112;
-pub(crate) const NMAS_AUTHEN: u128 = (b'N' as u128)
-    | (b'M' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'S' as u128) << 24
-    | (b'_' as u128) << 32
-    | (b'A' as u128) << 40
-    | (b'U' as u128) << 48
-    | (b'T' as u128) << 56
-    | (b'H' as u128) << 64
-    | (b'E' as u128) << 72
-    | (b'N' as u128) << 80;
-pub(crate) const NMAS_LOGIN: u128 = (b'N' as u128)
-    | (b'M' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'S' as u128) << 24
-    | (b'_' as u128) << 32
-    | (b'L' as u128) << 40
-    | (b'O' as u128) << 48
-    | (b'G' as u128) << 56
-    | (b'I' as u128) << 64
-    | (b'N' as u128) << 72;
-pub(crate) const NTLM: u128 =
-    (b'N' as u128) | (b'T' as u128) << 8 | (b'L' as u128) << 16 | (b'M' as u128) << 24;
-pub(crate) const OAUTH10A: u128 = (b'O' as u128)
-    | (b'A' as u128) << 8
-    | (b'U' as u128) << 16
-    | (b'T' as u128) << 24
-    | (b'H' as u128) << 32
-    | (b'1' as u128) << 40
-    | (b'0' as u128) << 48
-    | (b'A' as u128) << 56;
-pub(crate) const OAUTHBEARER: u128 = (b'O' as u128)
-    | (b'A' as u128) << 8
-    | (b'U' as u128) << 16
-    | (b'T' as u128) << 24
-    | (b'H' as u128) << 32
-    | (b'B' as u128) << 40
-    | (b'E' as u128) << 48
-    | (b'A' as u128) << 56
-    | (b'R' as u128) << 64
-    | (b'E' as u128) << 72
-    | (b'R' as u128) << 80;
-pub(crate) const OPENID20: u128 = (b'O' as u128)
-    | (b'P' as u128) << 8
-    | (b'E' as u128) << 16
-    | (b'N' as u128) << 24
-    | (b'I' as u128) << 32
-    | (b'D' as u128) << 40
-    | (b'2' as u128) << 48
-    | (b'0' as u128) << 56;
-pub(crate) const OTP: u128 = (b'O' as u128) | (b'T' as u128) << 8 | (b'P' as u128) << 16;
-pub(crate) const PLAIN: u128 = (b'P' as u128)
-    | (b'L' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'I' as u128) << 24
-    | (b'N' as u128) << 32;
-pub(crate) const SAML20: u128 = (b'S' as u128)
-    | (b'A' as u128) << 8
-    | (b'M' as u128) << 16
-    | (b'L' as u128) << 24
-    | (b'2' as u128) << 32
-    | (b'0' as u128) << 40;
-pub(crate) const SCRAM_SHA_1: u128 = (b'S' as u128)
-    | (b'C' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'M' as u128) << 32
-    | (b'-' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'H' as u128) << 56
-    | (b'A' as u128) << 64
-    | (b'-' as u128) << 72
-    | (b'1' as u128) << 80;
-pub(crate) const SCRAM_SHA_1_PLUS: u128 = (b'S' as u128)
-    | (b'C' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'M' as u128) << 32
-    | (b'-' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'H' as u128) << 56
-    | (b'A' as u128) << 64
-    | (b'-' as u128) << 72
-    | (b'1' as u128) << 80
-    | (b'-' as u128) << 88
-    | (b'P' as u128) << 96
-    | (b'L' as u128) << 104
-    | (b'U' as u128) << 112
-    | (b'S' as u128) << 120;
-pub(crate) const SCRAM_SHA_256: u128 = (b'S' as u128)
-    | (b'C' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'M' as u128) << 32
-    | (b'-' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'H' as u128) << 56
-    | (b'A' as u128) << 64
-    | (b'-' as u128) << 72
-    | (b'2' as u128) << 80
-    | (b'5' as u128) << 88
-    | (b'6' as u128) << 96;
-pub(crate) const SCRAM_SHA_256_PL: u128 = (b'S' as u128)
-    | (b'C' as u128) << 8
-    | (b'R' as u128) << 16
-    | (b'A' as u128) << 24
-    | (b'M' as u128) << 32
-    | (b'-' as u128) << 40
-    | (b'S' as u128) << 48
-    | (b'H' as u128) << 56
-    | (b'A' as u128) << 64
-    | (b'-' as u128) << 72
-    | (b'2' as u128) << 80
-    | (b'5' as u128) << 88
-    | (b'6' as u128) << 96
-    | (b'-' as u128) << 104
-    | (b'P' as u128) << 112
-    | (b'L' as u128) << 120;
-pub(crate) const SECURID: u128 = (b'S' as u128)
-    | (b'E' as u128) << 8
-    | (b'C' as u128) << 16
-    | (b'U' as u128) << 24
-    | (b'R' as u128) << 32
-    | (b'I' as u128) << 40
-    | (b'D' as u128) << 48;
-pub(crate) const SKEY: u128 =
-    (b'S' as u128) | (b'K' as u128) << 8 | (b'E' as u128) << 16 | (b'Y' as u128) << 24;
-pub(crate) const SPNEGO: u128 = (b'S' as u128)
-    | (b'P' as u128) << 8
-    | (b'N' as u128) << 16
-    | (b'E' as u128) << 24
-    | (b'G' as u128) << 32
-    | (b'O' as u128) << 40;
-pub(crate) const SPNEGO_PLUS: u128 = (b'S' as u128)
-    | (b'P' as u128) << 8
-    | (b'N' as u128) << 16
-    | (b'E' as u128) << 24
-    | (b'G' as u128) << 32
-    | (b'O' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'P' as u128) << 56
-    | (b'L' as u128) << 64
-    | (b'U' as u128) << 72
-    | (b'S' as u128) << 80;
-pub(crate) const SXOVER_PLUS: u128 = (b'S' as u128)
-    | (b'X' as u128) << 8
-    | (b'O' as u128) << 16
-    | (b'V' as u128) << 24
-    | (b'E' as u128) << 32
-    | (b'R' as u128) << 40
-    | (b'-' as u128) << 48
-    | (b'P' as u128) << 56
-    | (b'L' as u128) << 64
-    | (b'U' as u128) << 72
-    | (b'S' as u128) << 80;
-pub(crate) const XOAUTH: u128 = (b'X' as u128)
-    | (b'O' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'U' as u128) << 24
-    | (b'T' as u128) << 32
-    | (b'H' as u128) << 40;
-pub(crate) const XOAUTH2: u128 = (b'X' as u128)
-    | (b'O' as u128) << 8
-    | (b'A' as u128) << 16
-    | (b'U' as u128) << 24
-    | (b'T' as u128) << 32
-    | (b'H' as u128) << 40
-    | (b'2' as u128) << 48;
+define_tokens_128! {
+    // Parameters
+    BODY,
+    SEVENBIT = "7BIT",
+    EIGHBITMIME = "8BITMIME",
+    BINARYMIME,
+    SIZE,
+    TRANSID,
+    BY,
+    NOTIFY,
+    ORCPT,
+    RET,
+    ENVID,
+    NEVER,
+    SUCCESS,
+    FAILURE,
+    DELAY,
+    SOLICIT,
+    MTRK,
+    AUTH_ = "AUTH",
+    HOLDFOR,
+    HOLDUNTIL,
+    SMTPUTF8,
+    CONPERM,
+    CONNEG,
+    MT_PRIORITY = "MT-PRIORITY",
+    RRVS,
+    REQUIRETLS,
+    _9798_M_DSA_SHA1 = "9798-M-DSA-SHA1",
+    _9798_M_ECDSA_SHA = "9798-M-ECDSA-SHA",
+    _9798_M_RSA_SHA1_ = "9798-M-RSA-SHA1-",
+    _9798_U_DSA_SHA1 = "9798-U-DSA-SHA1",
+    _9798_U_ECDSA_SHA = "9798-U-ECDSA-SHA",
+    _9798_U_RSA_SHA1_ = "9798-U-RSA-SHA1-",
+    ANONYMOUS,
+    CRAM_MD5 = "CRAM-MD5",
+    DIGEST_MD5 = "DIGEST-MD5",
+    EAP_AES128 = "EAP-AES128",
+    EAP_AES128_PLUS = "EAP-AES128-PLUS",
+    ECDH_X25519_CHAL = "ECDH-X25519-CHAL",
+    ECDSA_NIST256P_C = "ECDSA-NIST256P-C",
+    EXTERNAL,
+    GS2_KRB5 = "GS2-KRB5",
+    GS2_KRB5_PLUS = "GS2-KRB5-PLUS",
+    GSS_SPNEGO = "GSS-SPNEGO",
+    GSSAPI,
+    KERBEROS_V4 = "KERBEROS-V4",
+    KERBEROS_V5 = "KERBEROS-V5",
+    LOGIN,
+    NMAS_SAMBA_AUTH = "NMAS-SAMBA-AUTH",
+    NMAS_AUTHEN = "NMAS-AUTHEN",
+    NMAS_LOGIN = "NMAS-LOGIN",
+    NTLM,
+    OAUTH10A,
+    OAUTHBEARER,
+    OPENID20,
+    OTP,
+    PLAIN,
+    SAML20,
+    SCRAM_SHA_1 = "SCRAM-SHA-1",
+    SCRAM_SHA_1_PLUS = "SCRAM-SHA-1-PLUS",
+    SCRAM_SHA_256 = "SCRAM-SHA-256",
+    SCRAM_SHA_256_PL = "SCRAM-SHA-256-PL",
+    SECURID,
+    SKEY,
+    SPNEGO,
+    SPNEGO_PLUS = "SPNEGO-PLUS",
+    SXOVER_PLUS = "SXOVER-PLUS",
+    XOAUTH,
+    XOAUTH2,
+}
 
 /*
  * Adapted from Daniel Lemire's source:
