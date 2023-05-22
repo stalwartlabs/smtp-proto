@@ -320,3 +320,23 @@ impl<T: Display> AsRef<EhloResponse<T>> for EhloResponse<T> {
         self
     }
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::NeedsMoreData { bytes_left } => {
+                write!(f, "Needs more data: {} bytes left", bytes_left)
+            }
+            Error::UnknownCommand => write!(f, "Unknown command"),
+            Error::InvalidSenderAddress => write!(f, "Invalid sender address"),
+            Error::InvalidRecipientAddress => write!(f, "Invalid recipient address"),
+            Error::SyntaxError { syntax } => write!(f, "Syntax error: {}", syntax),
+            Error::InvalidParameter { param } => write!(f, "Invalid parameter: {}", param),
+            Error::UnsupportedParameter { param } => {
+                write!(f, "Unsupported parameter: {}", param)
+            }
+            Error::ResponseTooLong => write!(f, "Response too long"),
+            Error::InvalidResponse { code } => write!(f, "Invalid response: {}", code),
+        }
+    }
+}
