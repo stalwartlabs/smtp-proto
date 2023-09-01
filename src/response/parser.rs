@@ -93,7 +93,7 @@ impl ResponseReceiver {
                         });
                     }
                 },
-                4 | 5 | 6 => {
+                4..=6 => {
                     let mut do_restore = false;
 
                     match ch {
