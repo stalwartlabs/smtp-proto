@@ -261,6 +261,67 @@ mod tests {
                 vec!["\r\na\rb\nc\r\n.d\r\n..\r\n", "\r\n.\r\n"],
                 "\r\na\rb\nc\r\nd\r\n.\r\n",
             ),
+            // Test SMTP smuggling attempts
+            (
+                vec![
+                    "\n.\r\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                    "\r\n.\r\n",
+                ],
+                concat!(
+                    "\n.\r\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                ),
+            ),
+            (
+                vec![
+                    "\n.\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                    "\r\n.\r\n",
+                ],
+                concat!(
+                    "\n.\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                ),
+            ),
+            (
+                vec![
+                    "\r.\r\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                    "\r\n.\r\n",
+                ],
+                concat!(
+                    "\r.\r\n",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                ),
+            ),
+            (
+                vec![
+                    "\r.\r",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                    "\r\n.\r\n",
+                ],
+                concat!(
+                    "\r.\r",
+                    "MAIL FROM:<hello@world.com>\r\n",
+                    "RCPT TO:<test@domain.com\r\n",
+                    "DATA\r\n",
+                ),
+            ),
         ] {
             let mut r = DataReceiver::new();
             let mut buf = Vec::new();
