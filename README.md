@@ -3,7 +3,8 @@
 [![crates.io](https://img.shields.io/crates/v/smtp-proto)](https://crates.io/crates/smtp-proto)
 [![build](https://github.com/stalwartlabs/sieve/actions/workflows/rust.yml/badge.svg)](https://github.com/stalwartlabs/sieve/actions/workflows/rust.yml)
 [![docs.rs](https://img.shields.io/docsrs/smtp-proto)](https://docs.rs/smtp-proto)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 _smtp-proto_ is a fast SMTP/LMTP parser for Rust that supports all [registered SMTP service extensions](https://www.iana.org/assignments/mail-parameters/mail-parameters.xhtml).
 The library is part of Stalwart SMTP and LMTP servers. It is not yet documented so if you need help using the library please start a discussion.
