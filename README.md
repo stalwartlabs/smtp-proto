@@ -25,13 +25,13 @@ To fuzz the library with `cargo-fuzz`:
 
 ## License
 
-Licensed under the terms of the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0.en.html) as published by
-the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-See [LICENSE](LICENSE) for more details.
+Licensed under either of
 
-You can be released from the requirements of the AGPLv3 license by purchasing
-a commercial license. Please contact licensing@stalw.art for more details.
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
   
 ## Copyright
 
-Copyright (C) 2020-2023, Stalwart Labs Ltd.
+Copyright (C) 2020-2024, Stalwart Labs Ltd.

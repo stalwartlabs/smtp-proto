@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2020-2024, Stalwart Labs Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+ * https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+ * <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+ * option. This file may not be copied, modified, or distributed
+ * except according to those terms.
+*/
+
 const fn str_to_array<const N: usize>(s: &str) -> [u8; N] {
     let s = s.as_bytes();
     let mut arr = [0; N];
@@ -35,6 +45,6 @@ macro_rules! define_tokens_128 {
     };
 }
 
-pub(crate) use first;
-pub(crate) use define_tokens_64;
 pub(crate) use define_tokens_128;
+pub(crate) use define_tokens_64;
+pub(crate) use first;
