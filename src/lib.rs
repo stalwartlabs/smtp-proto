@@ -52,6 +52,9 @@ pub mod request;
 pub mod response;
 mod tokens;
 
+#[cfg(feature = "serde_support")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request<T> {
     Ehlo { host: T },
@@ -219,6 +222,7 @@ pub struct EhloResponse<T: Display> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
 pub struct Response<T: Display> {
     pub code: u16,
     pub esc: [u8; 3],
