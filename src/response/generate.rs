@@ -31,7 +31,7 @@ impl<T: Display> EhloResponse<T> {
     }
 
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
-        write!(writer, "250-{} says hello\r\n", self.hostname)?;
+        write!(writer, "250-{} you had me at EHLO\r\n", self.hostname)?;
         let mut capabilities = self.capabilities;
 
         while capabilities != 0 {
