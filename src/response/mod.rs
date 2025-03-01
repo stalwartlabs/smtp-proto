@@ -79,3 +79,17 @@ impl<T: Display> Display for Response<T> {
         )
     }
 }
+
+#[cfg(feature = "rkyv")]
+impl<T: Display + rkyv::Archive> Display for crate::ArchivedResponse<T>
+where
+    <T as rkyv::Archive>::Archived: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Code: {}, Enhanced code: {}.{}.{}, Message: {}",
+            self.code, self.esc[0], self.esc[1], self.esc[2], self.message,
+        )
+    }
+}
