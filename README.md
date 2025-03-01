@@ -35,4 +35,5 @@ at your option.
   
 ## Copyright
 
-Copyright (C) 2020-2024, Stalwart Labs Ltd.
+Copyright (C) 2020, Stalwart Labs LLC
+

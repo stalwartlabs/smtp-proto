@@ -1,12 +1,8 @@
 /*
- * Copyright (c) 2020-2024, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
- * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
- * https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
- * <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
- * option. This file may not be copied, modified, or distributed
- * except according to those terms.
-*/
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
 
 use std::slice::Iter;
 
@@ -244,9 +240,9 @@ impl EhloResponse<String> {
                     }
                     DSN => EXT_DSN,
                     ENHANCEDSTATUSCO
-                        if parser.stop_char.to_ascii_uppercase() == b'D'
-                            && parser.read_char()?.to_ascii_uppercase() == b'E'
-                            && parser.read_char()?.to_ascii_uppercase() == b'S' =>
+                        if parser.stop_char.eq_ignore_ascii_case(&b'D')
+                            && parser.read_char()?.eq_ignore_ascii_case(&b'E')
+                            && parser.read_char()?.eq_ignore_ascii_case(&b'S') =>
                     {
                         EXT_ENHANCED_STATUS_CODES
                     }

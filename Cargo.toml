@@ -8,14 +8,16 @@ license = "Apache-2.0 OR MIT"
 keywords = ["smtp", "lmtp", "protocol", "parser"]
 categories = ["email", "parser-implementations"]
 readme = "README.md"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 
 [dependencies]
+rkyv = { version = "0.8.10", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
 
 [dev-dependencies]
 
 [features]
 default = []
-serde_support = ["serde"]
+rkyv = ["dep:rkyv"]
+serde = ["dep:serde"]

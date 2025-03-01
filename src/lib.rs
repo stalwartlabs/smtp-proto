@@ -1,61 +1,23 @@
 /*
- * Copyright (c) 2020-2024, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
- * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
- * https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
- * <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
- * option. This file may not be copied, modified, or distributed
- * except according to those terms.
-*/
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
 
-//! # smtp-proto
-//!
-//! [![crates.io](https://img.shields.io/crates/v/smtp-proto)](https://crates.io/crates/smtp-proto)
-//! [![build](https://github.com/stalwartlabs/sieve/actions/workflows/rust.yml/badge.svg)](https://github.com/stalwartlabs/sieve/actions/workflows/rust.yml)
-//! [![docs.rs](https://img.shields.io/docsrs/smtp-proto)](https://docs.rs/smtp-proto)
-//! [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-//!
-//! _smtp-proto_ is a fast SMTP/LMTP parser for Rust that supports all [registered SMTP service extensions](https://www.iana.org/assignments/mail-parameters/mail-parameters.xhtml).
-//! The library is part of Stalwart SMTP and LMTP servers. It is not yet documented so if you need help using the library please start a discussion.
-//!
-//!
-//! ## Testing & Fuzzing
-//!
-//! To run the testsuite:
-//!
-//! ```bash
-//!  $ cargo test
-//! ```
-//!
-//! To fuzz the library with `cargo-fuzz`:
-//!
-//! ```bash
-//!  $ cargo +nightly fuzz run smtp_proto
-//! ```
-//!
-//! ## License
-//!
-//! Licensed under the terms of the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0.en.html) as published by
-//! the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-//! See [LICENSE](LICENSE) for more details.
-//!
-//! You can be released from the requirements of the AGPLv3 license by purchasing
-//! a commercial license. Please contact licensing@stalw.art for more details.
-//!   
-//! ## Copyright
-//!
-//! Copyright (C) 2020-2023, Stalwart Labs Ltd.
-
+#![doc = include_str!("../README.md")]
+#![deny(rust_2018_idioms)]
 use std::fmt::Display;
 
 pub mod request;
 pub mod response;
 mod tokens;
 
-#[cfg(feature = "serde_support")]
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub enum Request<T> {
     Ehlo { host: T },
     Lhlo { host: T },
@@ -78,6 +40,11 @@ pub enum Request<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub struct MailFrom<T> {
     pub address: T,
     pub flags: u64,
@@ -94,6 +61,11 @@ pub struct MailFrom<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub struct RcptTo<T> {
     pub address: T,
     pub orcpt: Option<T>,
@@ -122,6 +94,11 @@ pub const RCPT_RRVS_REJECT: u64 = 1 << 5;
 pub const RCPT_RRVS_CONTINUE: u64 = 1 << 6;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub struct Mtrk<T> {
     pub certifier: T,
     pub timeout: u64,
@@ -200,6 +177,11 @@ pub const EXT_EXPN: u32 = 1 << 26;
 pub const EXT_VRFY: u32 = 1 << 27;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub enum MtPriority {
     #[default]
     Mixer,
@@ -208,6 +190,11 @@ pub enum MtPriority {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub struct EhloResponse<T: Display> {
     pub hostname: T,
     pub capabilities: u32,
@@ -222,7 +209,11 @@ pub struct EhloResponse<T: Display> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub struct Response<T: Display> {
     pub code: u16,
     pub esc: [u8; 3],
@@ -230,6 +221,11 @@ pub struct Response<T: Display> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub enum Severity {
     PositiveCompletion = 2,
     PositiveIntermediate = 3,
@@ -239,6 +235,11 @@ pub enum Severity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)
+)]
 pub enum Category {
     Syntax = 0,
     Information = 1,

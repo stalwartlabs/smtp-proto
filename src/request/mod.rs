@@ -1,12 +1,8 @@
 /*
- * Copyright (c) 2020-2024, Stalwart Labs Ltd.
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
- * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
- * https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
- * <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
- * option. This file may not be copied, modified, or distributed
- * except according to those terms.
-*/
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
 
 use crate::tokens::{define_tokens_128, define_tokens_64};
 
