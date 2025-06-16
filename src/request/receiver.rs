@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use std::slice::Iter;
+use std::{borrow::Cow, slice::Iter};
 
 use crate::{Error, Request};
 
@@ -13,6 +13,7 @@ pub const MAX_LINE_LENGTH: usize = 2048;
 #[derive(Default)]
 pub struct RequestReceiver {
     pub buf: Vec<u8>,
+    buf_used: bool,
 }
 
 pub struct DataReceiver {
@@ -44,11 +45,20 @@ pub struct LineReceiver<T> {
 }
 
 impl RequestReceiver {
-    pub fn ingest(
-        &mut self,
-        bytes: &mut Iter<'_, u8>,
+    pub fn ingest<'this, 'bytes, 'out>(
+        &'this mut self,
+        bytes: &mut Iter<'bytes, u8>,
         buf: &[u8],
-    ) -> Result<Request<String>, Error> {
+    ) -> Result<Request<Cow<'out, str>>, Error>
+    where
+        'this: 'out,
+        'bytes: 'out,
+    {
+        if self.buf_used {
+            self.buf.clear();
+            self.buf_used = false;
+        }
+
         if self.buf.is_empty() {
             match Request::parse(bytes) {
                 Err(Error::NeedsMoreData { bytes_left }) => {
@@ -66,9 +76,8 @@ impl RequestReceiver {
             for &ch in bytes {
                 self.buf.push(ch);
                 if ch == b'\n' {
-                    let result = Request::parse(&mut self.buf.iter());
-                    self.buf.clear();
-                    return result;
+                    self.buf_used = true;
+                    return Request::parse(&mut self.buf.iter());
                 } else if self.buf.len() == MAX_LINE_LENGTH {
                     self.buf.clear();
                     return Err(Error::ResponseTooLong);
@@ -356,13 +365,13 @@ mod tests {
                 loop {
                     match r.ingest(&mut bytes, data.as_bytes()) {
                         Ok(request) => {
-                            requests.push(request);
+                            requests.push(request.into_owned());
                             continue;
                         }
                         Err(Error::NeedsMoreData { .. }) => {
                             break;
                         }
-                        err => panic!("Unexpected error {err:?}"),
+                        err => panic!("Unexpected error for {data:?}: {err:?}"),
                     }
                 }
             }
