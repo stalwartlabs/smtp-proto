@@ -12,7 +12,7 @@ pub const MAX_LINE_LENGTH: usize = 2048;
 
 #[derive(Default)]
 pub struct RequestReceiver {
-    pub buf: Vec<u8>,
+    buf: Vec<u8>,
     buf_used: bool,
 }
 
@@ -45,6 +45,15 @@ pub struct LineReceiver<T> {
 }
 
 impl RequestReceiver {
+    pub fn buf(&mut self) -> &mut Vec<u8> {
+        if self.buf_used {
+            self.buf.clear();
+            self.buf_used = false;
+        }
+
+        &mut self.buf
+    }
+
     pub fn ingest<'this, 'bytes, 'out>(
         &'this mut self,
         bytes: &mut Iter<'bytes, u8>,
@@ -54,10 +63,7 @@ impl RequestReceiver {
         'this: 'out,
         'bytes: 'out,
     {
-        if self.buf_used {
-            self.buf.clear();
-            self.buf_used = false;
-        }
+        self.buf();
 
         if self.buf.is_empty() {
             match Request::parse(bytes) {
