@@ -10,9 +10,6 @@ use crate::*;
 
 use super::*;
 
-#[derive(Default)]
-pub struct RequestParser {}
-
 const MAX_ADDRESS_LEN: usize = 256;
 const MAX_DOMAIN_LEN: usize = 255;
 
