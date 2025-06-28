@@ -292,7 +292,7 @@ impl EhloResponse<String> {
                         response.no_soliciting = if parser.stop_char != LF {
                             let text = parser.text()?;
                             if !text.is_empty() {
-                                text.into()
+                                text.into_owned().into()
                             } else {
                                 None
                             }
