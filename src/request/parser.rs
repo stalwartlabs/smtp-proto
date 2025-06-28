@@ -431,7 +431,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 b'>' if !in_quote => {
                     self.stop_char = ch;
                     let value = value.into_string();
-                    let len = value.chars().count();
+                    let len = value.len();
                     return Ok(
                         if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
                             value.into()
@@ -452,7 +452,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     if !value.is_empty() {
                         self.stop_char = b' ';
                         let value = value.into_string();
-                        let len = value.chars().count();
+                        let len = value.len();
                         return Ok(
                             if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
                                 value.into()
@@ -465,7 +465,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 b'\n' => {
                     self.stop_char = b'\n';
                     let value = value.into_string();
-                    let len = value.chars().count();
+                    let len = value.len();
                     return Ok(
                         if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
                             value.into()
