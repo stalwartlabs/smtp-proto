@@ -570,7 +570,7 @@ mod tests {
                 true,
             ),
             (
-                concat!("250 2address.org\n"),
+                "250 2address.org\n",
                 Response {
                     code: 250,
                     esc: [0, 0, 0],
@@ -579,7 +579,7 @@ mod tests {
                 true,
             ),
             (
-                concat!("250 100.address.org\n"),
+                "250 100.address.org\n",
                 Response {
                     code: 250,
                     esc: [0, 0, 0],
@@ -588,7 +588,7 @@ mod tests {
                 true,
             ),
             (
-                concat!("250 111111111111\n"),
+                "250 111111111111\n",
                 Response {
                     code: 250,
                     esc: [0, 0, 0],
@@ -597,7 +597,7 @@ mod tests {
                 true,
             ),
             (
-                concat!("250 99999999999999\n"),
+                "250 99999999999999\n",
                 Response {
                     code: 250,
                     esc: [0, 0, 0],
@@ -606,7 +606,7 @@ mod tests {
                 true,
             ),
             (
-                concat!("250 2.0.0 Message queued for delivery.\r\n"),
+                "250 2.0.0 Message queued for delivery.\r\n",
                 Response {
                     code: 250,
                     esc: [2, 0, 0],

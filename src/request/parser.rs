@@ -1756,7 +1756,7 @@ mod tests {
                 Err(Error::InvalidParameter { param: "HOLDFOR" }),
             ),
             (
-                concat!("RCPT TO:<> NOTIFY=FAILURE"),
+                "RCPT TO:<> NOTIFY=FAILURE",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -1766,7 +1766,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> NOTIFY=FAILURE,DELAY"),
+                "RCPT TO:<> NOTIFY=FAILURE,DELAY",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -1776,7 +1776,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> NOTIFY=SUCCESS,FAILURE,DELAY"),
+                "RCPT TO:<> NOTIFY=SUCCESS,FAILURE,DELAY",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -1786,7 +1786,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> NOTIFY=NEVER"),
+                "RCPT TO:<> NOTIFY=NEVER",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -1808,7 +1808,7 @@ mod tests {
                 Err(Error::InvalidParameter { param: "NOTIFY" }),
             ),
             (
-                concat!("RCPT TO:<> ORCPT=rfc822;Bob@Example.COM"),
+                "RCPT TO:<> ORCPT=rfc822;Bob@Example.COM",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -1886,7 +1886,7 @@ mod tests {
                 Err(Error::InvalidParameter { param: "ENVID" }),
             ),
             (
-                concat!("MAIL FROM:<> SOLICIT=org.example:ADV:ADLT",),
+                "MAIL FROM:<> SOLICIT=org.example:ADV:ADLT",
                 Ok(Request::Mail {
                     from: MailFrom {
                         address: "".to_string(),
@@ -2037,7 +2037,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> RRVS=2014-04-03T23:01:00Z"),
+                "RCPT TO:<> RRVS=2014-04-03T23:01:00Z",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -2048,7 +2048,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> RRVS=1997-11-24T14:22:01-08:00;C"),
+                "RCPT TO:<> RRVS=1997-11-24T14:22:01-08:00;C",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),
@@ -2059,7 +2059,7 @@ mod tests {
                 }),
             ),
             (
-                concat!("RCPT TO:<> RRVS=2003-07-01T10:52:37+02:00;R"),
+                "RCPT TO:<> RRVS=2003-07-01T10:52:37+02:00;R",
                 Ok(Request::Rcpt {
                     to: RcptTo {
                         address: "".to_string(),

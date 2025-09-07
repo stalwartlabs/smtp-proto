@@ -8,7 +8,7 @@ use std::slice::Iter;
 
 use crate::{Error, Request};
 
-pub const MAX_LINE_LENGTH: usize = 2048;
+pub const MAX_LINE_LENGTH: usize = 4096;
 
 #[derive(Default)]
 pub struct RequestReceiver {
