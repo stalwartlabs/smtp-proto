@@ -429,7 +429,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     let value = value.data;
 
                     let is_valid = value.is_empty()
-                        || value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0;
+                        || (value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0) || value.to_ascii_lowercase() == "postmaster";
 
                     return Ok(is_valid.then_some(value));
                 }
@@ -1583,6 +1583,18 @@ mod tests {
             ("MAIL FROM:<@invalid>", Err(Error::InvalidSenderAddress)),
             (
                 "MAIL FROM:<hi@@invalid.org>",
+                Err(Error::InvalidSenderAddress),
+            ),
+            (
+                "MAIL FROM:<PostMaster>",
+                Ok(Request::Mail { from: "PostMaster".into() }),
+            ),
+            (
+                "MAIL FROM:<postmaster>",
+                Ok(Request::Mail { from: "postmaster".into() }),
+            ),
+            (
+                "MAIL FROM:<postmasterfail>",
                 Err(Error::InvalidSenderAddress),
             ),
             (
