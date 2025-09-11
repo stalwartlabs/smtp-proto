@@ -6,6 +6,8 @@
 
 #![doc = include_str!("../README.md")]
 #![deny(rust_2018_idioms)]
+
+use std::borrow::Cow;
 use std::fmt::Display;
 
 pub mod request;
@@ -39,6 +41,68 @@ pub enum Request<T> {
     Quit,
 }
 
+impl Request<Cow<'_, str>> {
+    pub fn into_owned(self) -> Request<String> {
+        match self {
+            Request::Ehlo { host } => Request::Ehlo {
+                host: host.into_owned(),
+            },
+            Request::Lhlo { host } => Request::Lhlo {
+                host: host.into_owned(),
+            },
+            Request::Helo { host } => Request::Helo {
+                host: host.into_owned(),
+            },
+            Request::Mail { from } => Request::Mail {
+                from: from.into_owned(),
+            },
+            Request::Rcpt { to } => Request::Rcpt {
+                to: to.into_owned(),
+            },
+            Request::Bdat {
+                chunk_size,
+                is_last,
+            } => Request::Bdat {
+                chunk_size,
+                is_last,
+            },
+            Request::Auth {
+                mechanism,
+                initial_response,
+            } => Request::Auth {
+                mechanism,
+                initial_response: initial_response.into_owned(),
+            },
+            Request::Noop { value } => Request::Noop {
+                value: value.into_owned(),
+            },
+            Request::Vrfy { value } => Request::Vrfy {
+                value: value.into_owned(),
+            },
+            Request::Expn { value } => Request::Expn {
+                value: value.into_owned(),
+            },
+            Request::Help { value } => Request::Help {
+                value: value.into_owned(),
+            },
+            Request::Etrn { name } => Request::Etrn {
+                name: name.into_owned(),
+            },
+            Request::Atrn { domains } => Request::Atrn {
+                domains: domains.into_iter().map(Cow::into_owned).collect(),
+            },
+            Request::Burl { uri, is_last } => Request::Burl {
+                uri: uri.into_owned(),
+                is_last,
+            },
+            Request::StartTls => Request::StartTls,
+            Request::Data => Request::Data,
+            Request::Rset => Request::Rset,
+            Request::Quit => Request::Quit,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
@@ -60,6 +124,25 @@ pub struct MailFrom<T> {
     pub mt_priority: i64,
 }
 
+impl MailFrom<Cow<'_, str>> {
+    pub fn into_owned(self) -> MailFrom<String> {
+        MailFrom {
+            address: self.address.into_owned(),
+            flags: self.flags,
+            size: self.size,
+            trans_id: self.trans_id.map(Cow::into_owned),
+            by: self.by,
+            env_id: self.env_id.map(Cow::into_owned),
+            solicit: self.solicit.map(Cow::into_owned),
+            mtrk: self.mtrk.map(Mtrk::into_owned),
+            auth: self.auth.map(Cow::into_owned),
+            hold_for: self.hold_for,
+            hold_until: self.hold_until,
+            mt_priority: self.mt_priority,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
@@ -71,6 +154,17 @@ pub struct RcptTo<T> {
     pub orcpt: Option<T>,
     pub rrvs: i64,
     pub flags: u64,
+}
+
+impl RcptTo<Cow<'_, str>> {
+    pub fn into_owned(self) -> RcptTo<String> {
+        RcptTo {
+            address: self.address.into_owned(),
+            orcpt: self.orcpt.map(Cow::into_owned),
+            rrvs: self.rrvs,
+            flags: self.flags,
+        }
+    }
 }
 
 pub const MAIL_BODY_7BIT: u64 = 1 << 0;
@@ -102,6 +196,15 @@ pub const RCPT_RRVS_CONTINUE: u64 = 1 << 6;
 pub struct Mtrk<T> {
     pub certifier: T,
     pub timeout: u64,
+}
+
+impl Mtrk<Cow<'_, str>> {
+    pub fn into_owned(self) -> Mtrk<String> {
+        Mtrk {
+            certifier: self.certifier.into_owned(),
+            timeout: self.timeout,
+        }
+    }
 }
 
 pub const AUTH_SCRAM_SHA_256_PLUS: u64 = 1u64 << 0;

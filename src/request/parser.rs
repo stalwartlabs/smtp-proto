@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
+use std::borrow::Cow;
+use std::char;
 use std::slice::Iter;
 
 use crate::*;
@@ -13,8 +15,8 @@ use super::*;
 const MAX_ADDRESS_LEN: usize = 256;
 const MAX_DOMAIN_LEN: usize = 255;
 
-impl Request<String> {
-    pub fn parse(bytes: &mut Iter<'_, u8>) -> Result<Request<String>, Error> {
+impl<'a> Request<Cow<'a, str>> {
+    pub fn parse(bytes: &mut Iter<'a, u8>) -> Result<Request<Cow<'a, str>>, Error> {
         let mut parser = Rfc5321Parser::new(bytes);
         let command = parser.hashed_value()?;
         if !parser.stop_char.is_ascii_whitespace() {
@@ -125,7 +127,7 @@ impl Request<String> {
                         let initial_response = if parser.stop_char != LF {
                             parser.text()?
                         } else {
-                            String::new()
+                            Cow::Borrowed("")
                         };
                         parser.seek_lf()?;
                         return Ok(Request::Auth {
@@ -157,7 +159,7 @@ impl Request<String> {
                     Ok(Request::Noop { value })
                 } else {
                     Ok(Request::Noop {
-                        value: String::new(),
+                        value: Cow::Borrowed(""),
                     })
                 }
             }
@@ -200,7 +202,7 @@ impl Request<String> {
                     Ok(Request::Help { value })
                 } else {
                     Ok(Request::Help {
-                        value: String::new(),
+                        value: Cow::Borrowed(""),
                     })
                 }
             }
@@ -378,14 +380,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
-    pub fn address(&mut self) -> Result<Option<String>, Error> {
-        let mut value = Vec::with_capacity(32);
+    pub fn address(&mut self) -> Result<Option<Cow<'y, str>>, Error> {
+        let mut value = self.start_zero_copy();
         let mut last_ch = 0;
         let mut in_quote = false;
         let mut at_count = 0;
         let mut lp_len = 0;
 
-        for &ch in &mut self.bytes {
+        while let Some(&ch) = self.bytes.next() {
             match ch {
                 b'0'..=b'9'
                 | b'a'..=b'z'
@@ -409,79 +411,74 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 | b'|'
                 | b'}'
                 | b'~'
-                | 0x7f..=u8::MAX => {
-                    value.push(ch);
-                }
+                | 0x7f..=u8::MAX => {}
                 b'.' if !in_quote => {
-                    if last_ch != b'.' && last_ch != b'@' && !value.is_empty() {
-                        value.push(ch);
-                    } else {
+                    if last_ch == b'.' || last_ch == b'@' || self.len_excluding_current(&value) == 0
+                    {
                         self.stop_char = ch;
                         return Ok(None);
                     }
                 }
                 b'@' if !in_quote => {
                     at_count += 1;
-                    lp_len = value.len();
-                    value.push(ch);
+                    lp_len = self.len_excluding_current(&value);
                 }
                 b'>' if !in_quote => {
                     self.stop_char = ch;
-                    let value = value.into_string();
-                    let len = value.len();
-                    return Ok(
-                        if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
-                            value.into()
-                        } else {
-                            None
-                        },
-                    );
+                    self.flush_excluding_current(&mut value);
+                    let value = value.data;
+
+                    let is_valid = value.is_empty()
+                        || value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0;
+
+                    return Ok(is_valid.then_some(value));
                 }
-                b'\r' => (),
-                b':' if !in_quote && matches!(value.first(), Some(b'@')) => {
+                b'\r' => self.flush_excluding_current(&mut value),
+                b':' if !in_quote && self.first_excluding_current(&value) == Some(b'@') => {
                     // Remove source route
-                    value.clear();
+                    value = self.start_zero_copy();
                     at_count = 0;
                     lp_len = 0;
                 }
-                b',' if !in_quote && matches!(value.first(), Some(b'@')) => (),
+                // Note that if there is an @ at the start, we require `:` a to be in the string
+                // later, since otherwise `at_count == 1 && lp_len > 0` cannot be satisfied. So it
+                // doesn't matter what we do here (other than not error).
+                b',' if !in_quote && self.first_excluding_current(&value) == Some(b'@') => (),
                 b' ' if !in_quote => {
-                    if !value.is_empty() {
+                    self.flush_excluding_current(&mut value);
+                    if !value.data.is_empty() {
                         self.stop_char = b' ';
-                        let value = value.into_string();
-                        let len = value.len();
-                        return Ok(
-                            if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
-                                value.into()
-                            } else {
-                                None
-                            },
-                        );
+                        let value = value.data;
+
+                        let is_valid = value.is_empty()
+                            || value.len() <= MAX_ADDRESS_LEN
+                                && at_count == 1
+                                && lp_len > 0;
+
+                        return Ok(is_valid.then_some(value));
                     }
                 }
                 b'\n' => {
                     self.stop_char = b'\n';
-                    let value = value.into_string();
-                    let len = value.len();
-                    return Ok(
-                        if len == 0 || len <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0 {
-                            value.into()
-                        } else {
-                            None
-                        },
-                    );
+                    self.flush_excluding_current(&mut value);
+                    let value = value.data;
+
+                    let is_valid = value.is_empty()
+                        || value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0;
+
+                    return Ok(is_valid.then_some(value));
                 }
                 b'\"' if !in_quote || last_ch != b'\\' => {
                     in_quote = !in_quote;
+                    self.flush_excluding_current(&mut value);
                 }
-                b'\\' if in_quote && last_ch != b'\\' => (),
+                b'\\' if in_quote && last_ch != b'\\' => {
+                    self.flush_excluding_current(&mut value);
+                }
+                _ if in_quote => {}
                 _ => {
-                    if in_quote {
-                        value.push(ch);
-                    } else {
-                        self.stop_char = ch;
-                        return Ok(None);
-                    }
+                    self.stop_char = ch;
+                    return Ok(None);
                 }
             }
 
@@ -493,31 +490,34 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
-    pub fn string(&mut self) -> Result<String, Error> {
+    pub fn string(&mut self) -> Result<Cow<'y, str>, Error> {
         let mut in_quote = false;
-        let mut value = Vec::with_capacity(32);
+        let mut value = self.start_zero_copy();
         let mut last_ch = 0;
 
-        for &ch in &mut self.bytes {
+        while let Some(&ch) = self.bytes.next() {
             match ch {
                 b' ' if !in_quote => {
-                    if !value.is_empty() {
+                    self.flush_excluding_current(&mut value);
+                    if !value.data.is_empty() {
                         self.stop_char = b' ';
-                        return Ok(value.into_string());
+                        return Ok(value.data);
                     }
                 }
                 b'\n' => {
+                    self.flush_excluding_current(&mut value);
                     self.stop_char = b'\n';
-                    return Ok(value.into_string());
+                    return Ok(value.data);
                 }
                 b'\"' if !in_quote || last_ch != b'\\' => {
                     in_quote = !in_quote;
+                    self.flush_excluding_current(&mut value);
                 }
-                b'\\' if in_quote && last_ch != b'\\' => (),
-                b'\r' => (),
-                _ => {
-                    value.push(ch);
+                b'\\' if in_quote && last_ch != b'\\' => {
+                    self.flush_excluding_current(&mut value);
                 }
+                b'\r' => self.flush_excluding_current(&mut value),
+                _ => {}
             }
 
             last_ch = ch;
@@ -529,22 +529,17 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
     }
 
     #[allow(clippy::while_let_on_iterator)]
-    pub fn text(&mut self) -> Result<String, Error> {
-        let mut value = Vec::with_capacity(32);
+    pub fn text(&mut self) -> Result<Cow<'y, str>, Error> {
+        let mut value = self.start_zero_copy();
         while let Some(&ch) = self.bytes.next() {
             match ch {
-                b'\n' => {
-                    self.stop_char = b'\n';
-                    return Ok(value.into_string());
+                b'\n' | b' ' => {
+                    self.flush_excluding_current(&mut value);
+                    self.stop_char = ch;
+                    return Ok(value.data);
                 }
-                b' ' => {
-                    self.stop_char = b' ';
-                    return Ok(value.into_string());
-                }
-                b'\r' => (),
-                _ => {
-                    value.push(ch);
-                }
+                b'\r' => self.flush_excluding_current(&mut value),
+                _ => {}
             }
         }
 
@@ -554,41 +549,41 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
     }
 
     #[allow(clippy::while_let_on_iterator)]
-    pub fn xtext(&mut self) -> Result<String, Error> {
-        let mut value = Vec::with_capacity(32);
+    pub fn xtext(&mut self) -> Result<Cow<'y, str>, Error> {
+        let mut value = self.start_zero_copy();
         while let Some(&ch) = self.bytes.next() {
             match ch {
-                b'\n' => {
-                    self.stop_char = b'\n';
-                    return Ok(value.into_string());
+                b'\n' | b' ' => {
+                    self.flush_excluding_current(&mut value);
+                    self.stop_char = ch;
+                    return Ok(value.data);
                 }
                 b'+' => {
+                    self.flush_excluding_current(&mut value);
+
                     let mut hex1 = None;
 
                     while let Some(&ch) = self.bytes.next() {
                         if let Some(digit) = char::from(ch).to_digit(16) {
                             if let Some(hex1) = hex1 {
-                                value.push(((hex1 as u8) << 4) | digit as u8);
+                                let data = value.data.to_mut();
+                                data.push(char::from(((hex1 as u8) << 4) | digit as u8));
                                 break;
                             } else {
                                 hex1 = Some(digit);
                             }
                         } else if ch == LF {
                             self.stop_char = b'\n';
-                            return Ok(value.into_string());
+                            return Ok(value.data);
                         } else {
                             break;
                         }
                     }
+
+                    self.drop_extra(&mut value);
                 }
-                b' ' => {
-                    self.stop_char = b' ';
-                    return Ok(value.into_string());
-                }
-                b'\r' => (),
-                _ => {
-                    value.push(ch);
-                }
+                b'\r' => self.flush_excluding_current(&mut value),
+                _ => {}
             }
         }
 
@@ -598,29 +593,29 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
     }
 
     #[allow(clippy::while_let_on_iterator)]
-    pub fn seek_char(&mut self, stop_char: u8) -> Result<String, Error> {
-        let mut value = Vec::with_capacity(32);
+    pub fn seek_char(&mut self, stop_char: u8) -> Result<Cow<'y, str>, Error> {
+        let mut value = self.start_zero_copy();
         while let Some(&ch) = self.bytes.next() {
             match ch {
                 b'\n' => {
+                    self.flush_excluding_current(&mut value);
                     self.stop_char = b'\n';
-                    return Ok(value.into_string());
+                    return Ok(value.data);
                 }
                 b' ' => {
-                    if !value.is_empty() {
+                    self.flush_excluding_current(&mut value);
+                    if !value.data.is_empty() {
                         self.stop_char = b' ';
-                        return Ok(value.into_string());
+                        return Ok(value.data);
                     }
                 }
-                b'\r' => (),
-                _ => {
-                    if ch != stop_char {
-                        value.push(ch);
-                    } else {
-                        self.stop_char = ch;
-                        return Ok(value.into_string());
-                    }
+                b'\r' => self.flush_excluding_current(&mut value),
+                _ if ch == stop_char => {
+                    self.flush_excluding_current(&mut value);
+                    self.stop_char = ch;
+                    return Ok(value.data);
                 }
+                _ => {}
             }
         }
 
@@ -796,7 +791,10 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
-    pub fn mail_from_parameters(&mut self, address: String) -> Result<MailFrom<String>, Error> {
+    pub fn mail_from_parameters(
+        &mut self,
+        address: Cow<'y, str>,
+    ) -> Result<MailFrom<Cow<'y, str>>, Error> {
         let mut params = MailFrom {
             address,
             flags: 0,
@@ -999,7 +997,10 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         Ok(params)
     }
 
-    pub fn rcpt_to_parameters(&mut self, address: String) -> Result<RcptTo<String>, Error> {
+    pub fn rcpt_to_parameters(
+        &mut self,
+        address: Cow<'y, str>,
+    ) -> Result<RcptTo<Cow<'y, str>>, Error> {
         let mut params = RcptTo {
             address,
             orcpt: None,
@@ -1190,10 +1191,80 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
             _ => 0.into(),
         })
     }
+
+    /// Construct a new `MaybeZeroCopy`, beginning a potentially zero-copy read from the input.
+    fn start_zero_copy(&self) -> MaybeZeroCopy<'y> {
+        MaybeZeroCopy {
+            remaining: self.bytes.as_slice(),
+            data: Cow::Borrowed(""),
+        }
+    }
+
+    /// Get the slice starting at the last time `MaybeZeroCopy` was flushed and ending one byte
+    /// before where `Self` currently is. This is what will be pushed to the `MaybeZeroCopy` on
+    /// flush.
+    fn extra_before_current(&self, out: &MaybeZeroCopy<'y>) -> &'y [u8] {
+        // Calculate the number of bytes we have advanced our iterator from the start of the
+        // `MaybeZeroCopy`. Subtract one to remove the current byte.
+        let new_len = self.bytes.as_slice().as_ptr().addr() - out.remaining.as_ptr().addr() - 1;
+        &out.remaining[..new_len]
+    }
+
+    /// Get the length of a `MaybeZeroCopy`.
+    fn len_excluding_current(&self, out: &MaybeZeroCopy<'y>) -> usize {
+        out.data.len() + self.extra_before_current(out).len()
+    }
+
+    /// Get the first byte of a `MaybeZeroCopy`.
+    fn first_excluding_current(&self, out: &MaybeZeroCopy<'y>) -> Option<u8> {
+        let first = out.data.bytes().next();
+        first.or_else(|| self.extra_before_current(out).first().copied())
+    }
+
+    /// Drop data up to the current cursor from the `MaybeZeroCopy`.
+    fn drop_extra(&self, out: &mut MaybeZeroCopy<'y>) {
+        out.remaining = self.bytes.as_slice();
+    }
+
+    /// Extend a `MaybeZeroCopy` with new bytes.
+    fn flush_excluding_current(&self, out: &mut MaybeZeroCopy<'y>) {
+        let extra = self.extra_before_current(out);
+        self.drop_extra(out);
+
+        if out.data.is_empty() {
+            out.data = String::from_utf8_lossy(extra);
+        } else {
+            if let Cow::Borrowed(s) = out.data {
+                let mut buf = String::with_capacity(32);
+                buf.push_str(s);
+                out.data = Cow::Owned(buf);
+            }
+
+            // The same algorithm as `String::from_utf8_lossy`, but appending to an existing
+            // buffer.
+            let out = out.data.to_mut();
+            for chunk in extra.utf8_chunks() {
+                out.push_str(chunk.valid());
+                if !chunk.invalid().is_empty() {
+                    out.push(char::REPLACEMENT_CHARACTER);
+                }
+            }
+        }
+    }
+}
+
+/// A state machine enabling parsing to be potentially zero-copy.
+struct MaybeZeroCopy<'y> {
+    /// Slice from where we start parsing to the end of the input.
+    remaining: &'y [u8],
+    /// The data itself.
+    data: Cow<'y, str>,
 }
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use crate::*;
 
     #[test]
@@ -1203,7 +1274,7 @@ mod tests {
             (
                 "EHLO bar.com",
                 Ok(Request::Ehlo {
-                    host: "bar.com".to_string(),
+                    host: Cow::Borrowed("bar.com"),
                 }),
             ),
             (
@@ -1215,7 +1286,7 @@ mod tests {
             (
                 "HELO bar.com",
                 Ok(Request::Helo {
-                    host: "bar.com".to_string(),
+                    host: "bar.com".into(),
                 }),
             ),
             (
@@ -1227,7 +1298,7 @@ mod tests {
             (
                 "LHLO bar.com",
                 Ok(Request::Lhlo {
-                    host: "bar.com".to_string(),
+                    host: "bar.com".into(),
                 }),
             ),
             (
@@ -1240,13 +1311,13 @@ mod tests {
             (
                 "VRFY Hello",
                 Ok(Request::Vrfy {
-                    value: "Hello".to_string(),
+                    value: "Hello".into(),
                 }),
             ),
             (
                 "VRFY \"Hello\\\" Wo\\\\rld\"",
                 Ok(Request::Vrfy {
-                    value: "Hello\" Wo\\rld".to_string(),
+                    value: "Hello\" Wo\\rld".into(),
                 }),
             ),
             (
@@ -1265,13 +1336,13 @@ mod tests {
             (
                 "EXPN Hello",
                 Ok(Request::Expn {
-                    value: "Hello".to_string(),
+                    value: "Hello".into(),
                 }),
             ),
             (
                 "EXPN \"Hello\\\" Wo\\\\rld\"",
                 Ok(Request::Expn {
-                    value: "Hello\" Wo\\rld".to_string(),
+                    value: "Hello\" Wo\\rld".into(),
                 }),
             ),
             (
@@ -1287,29 +1358,19 @@ mod tests {
                 }),
             ),
             // NOOP
-            (
-                "NOOP",
-                Ok(Request::Noop {
-                    value: "".to_string(),
-                }),
-            ),
+            ("NOOP", Ok(Request::Noop { value: "".into() })),
             (
                 "NOOP Hello",
                 Ok(Request::Noop {
-                    value: "Hello".to_string(),
+                    value: "Hello".into(),
                 }),
             ),
             // HELP
-            (
-                "HELP",
-                Ok(Request::Help {
-                    value: "".to_string(),
-                }),
-            ),
+            ("HELP", Ok(Request::Help { value: "".into() })),
             (
                 "HELP Hello",
                 Ok(Request::Help {
-                    value: "Hello".to_string(),
+                    value: "Hello".into(),
                 }),
             ),
             // No param commands
@@ -1368,28 +1429,28 @@ mod tests {
                 "AUTH GSSAPI",
                 Ok(Request::Auth {
                     mechanism: AUTH_GSSAPI,
-                    initial_response: "".to_string(),
+                    initial_response: "".into(),
                 }),
             ),
             (
                 "AUTH ECDSA-NIST256P-CHALLENGE =",
                 Ok(Request::Auth {
                     mechanism: AUTH_ECDSA_NIST256P_CHALLENGE,
-                    initial_response: "=".to_string(),
+                    initial_response: "=".into(),
                 }),
             ),
             (
                 "AUTH SCRAM-SHA-256-PLUS base64_goes_here",
                 Ok(Request::Auth {
                     mechanism: AUTH_SCRAM_SHA_256_PLUS,
-                    initial_response: "base64_goes_here".to_string(),
+                    initial_response: "base64_goes_here".into(),
                 }),
             ),
             (
                 "AUTH ECDSA-NIST256P-CHALLENGE100 abcde",
                 Ok(Request::Auth {
                     mechanism: 0,
-                    initial_response: "abcde".to_string(),
+                    initial_response: "abcde".into(),
                 }),
             ),
             (
@@ -1402,13 +1463,13 @@ mod tests {
             (
                 "ETRN Hello",
                 Ok(Request::Etrn {
-                    name: "Hello".to_string(),
+                    name: "Hello".into(),
                 }),
             ),
             (
                 "ETRN \"Hello\\\" Wo\\\\rld\"",
                 Ok(Request::Etrn {
-                    name: "Hello\" Wo\\rld".to_string(),
+                    name: "Hello\" Wo\\rld".into(),
                 }),
             ),
             (
@@ -1427,16 +1488,16 @@ mod tests {
             (
                 "ATRN example.org",
                 Ok(Request::Atrn {
-                    domains: vec!["example.org".to_string()],
+                    domains: vec!["example.org".into()],
                 }),
             ),
             (
                 "ATRN example.org,example.com,example.net",
                 Ok(Request::Atrn {
                     domains: vec![
-                        "example.org".to_string(),
-                        "example.com".to_string(),
-                        "example.net".to_string(),
+                        "example.org".into(),
+                        "example.com".into(),
+                        "example.net".into(),
                     ],
                 }),
             ),
@@ -1444,9 +1505,9 @@ mod tests {
                 "ATRN example.org, example.com, example.net",
                 Ok(Request::Atrn {
                     domains: vec![
-                        "example.org".to_string(),
-                        "example.com".to_string(),
-                        "example.net".to_string(),
+                        "example.org".into(),
+                        "example.com".into(),
+                        "example.net".into(),
                     ],
                 }),
             ),
@@ -1469,14 +1530,14 @@ mod tests {
                         ";uidvalidity=1078863300/;uid=25;urlauth=submit+harry",
                         ":internal:91354a473744909de610943775f92038"
                     )
-                    .to_string(),
+                    .into(),
                     is_last: true,
                 }),
             ),
             (
                 "BURL imap:://test.example.org",
                 Ok(Request::Burl {
-                    uri: "imap:://test.example.org".to_string(),
+                    uri: "imap:://test.example.org".into(),
                     is_last: false,
                 }),
             ),
@@ -1590,7 +1651,7 @@ mod tests {
                 "MAIL FROM:<> SMTPUTF8",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: MAIL_SMTPUTF8,
                         ..Default::default()
                     },
@@ -1600,7 +1661,7 @@ mod tests {
                 "MAIL FROM:<> SMTPUTF8 REQUIRETLS CONPERM",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: MAIL_SMTPUTF8 | MAIL_REQUIRETLS | MAIL_CONPERM,
                         ..Default::default()
                     },
@@ -1610,7 +1671,7 @@ mod tests {
                 "RCPT TO:<> CONNEG",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: RCPT_CONNEG,
                         ..Default::default()
                     },
@@ -1620,7 +1681,7 @@ mod tests {
                 "MAIL FROM:<> BODY=BINARYMIME BODY=7BIT BODY=8BITMIME",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: MAIL_BODY_7BIT | MAIL_BODY_8BITMIME | MAIL_BODY_BINARYMIME,
                         ..Default::default()
                     },
@@ -1634,7 +1695,7 @@ mod tests {
                 "MAIL FROM:<> SIZE=500000",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         size: 500000,
                         ..Default::default()
                     },
@@ -1656,7 +1717,7 @@ mod tests {
                 "MAIL FROM:<> BY=120;R",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         by: 120,
                         flags: MAIL_BY_RETURN,
                         ..Default::default()
@@ -1667,7 +1728,7 @@ mod tests {
                 "MAIL FROM:<> BY=0;N",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         by: 0,
                         flags: MAIL_BY_NOTIFY,
                         ..Default::default()
@@ -1678,7 +1739,7 @@ mod tests {
                 "MAIL FROM:<> BY=-10;RT",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         by: -10,
                         flags: MAIL_BY_RETURN | MAIL_BY_TRACE,
                         ..Default::default()
@@ -1689,7 +1750,7 @@ mod tests {
                 "MAIL FROM:<> BY=+22;NT",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         by: 22,
                         flags: MAIL_BY_NOTIFY | MAIL_BY_TRACE,
                         ..Default::default()
@@ -1732,7 +1793,7 @@ mod tests {
                 "MAIL FROM:<> HOLDUNTIL=12345 HOLDFOR=67890",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         hold_for: 67890,
                         hold_until: 12345,
                         ..Default::default()
@@ -1759,7 +1820,7 @@ mod tests {
                 "RCPT TO:<> NOTIFY=FAILURE",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: RCPT_NOTIFY_FAILURE,
                         ..Default::default()
                     },
@@ -1769,7 +1830,7 @@ mod tests {
                 "RCPT TO:<> NOTIFY=FAILURE,DELAY",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY,
                         ..Default::default()
                     },
@@ -1779,7 +1840,7 @@ mod tests {
                 "RCPT TO:<> NOTIFY=SUCCESS,FAILURE,DELAY",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS,
                         ..Default::default()
                     },
@@ -1789,7 +1850,7 @@ mod tests {
                 "RCPT TO:<> NOTIFY=NEVER",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: RCPT_NOTIFY_NEVER,
                         ..Default::default()
                     },
@@ -1811,8 +1872,8 @@ mod tests {
                 "RCPT TO:<> ORCPT=rfc822;Bob@Example.COM",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
-                        orcpt: "Bob@Example.COM".to_string().into(),
+                        address: "".into(),
+                        orcpt: Some("Bob@Example.COM".into()),
                         ..Default::default()
                     },
                 }),
@@ -1821,8 +1882,8 @@ mod tests {
                 concat!("RCPT TO:<> ", "ORCPT=rfc822;George+20@Tax-+20ME+20.GOV"),
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
-                        orcpt: "George @Tax- ME .GOV".to_string().into(),
+                        address: "".into(),
+                        orcpt: Some("George @Tax- ME .GOV".into()),
                         ..Default::default()
                     },
                 }),
@@ -1847,7 +1908,7 @@ mod tests {
                 "MAIL FROM:<> RET=HDRS RET=FULL",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         flags: MAIL_RET_FULL | MAIL_RET_HDRS,
                         ..Default::default()
                     },
@@ -1865,8 +1926,8 @@ mod tests {
                 "MAIL FROM:<> ENVID=QQ314159",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        env_id: "QQ314159".to_string().into(),
+                        address: "".into(),
+                        env_id: Some("QQ314159".into()),
                         ..Default::default()
                     },
                 }),
@@ -1875,8 +1936,8 @@ mod tests {
                 "MAIL FROM:<> ENVID=hi+20there",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        env_id: "hi there".to_string().into(),
+                        address: "".into(),
+                        env_id: Some("hi there".into()),
                         ..Default::default()
                     },
                 }),
@@ -1889,8 +1950,8 @@ mod tests {
                 "MAIL FROM:<> SOLICIT=org.example:ADV:ADLT",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        solicit: "org.example:ADV:ADLT".to_string().into(),
+                        address: "".into(),
+                        solicit: Some("org.example:ADV:ADLT".into()),
                         ..Default::default()
                     },
                 }),
@@ -1902,8 +1963,8 @@ mod tests {
                 ),
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        solicit: "net.example:ADV,org.example:ADV:ADLT".to_string().into(),
+                        address: "".into(),
+                        solicit: Some("net.example:ADV,org.example:ADV:ADLT".into()),
                         ..Default::default()
                     },
                 }),
@@ -1916,8 +1977,8 @@ mod tests {
                 "MAIL FROM:<> TRANSID=<12345@claremont.edu>",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        trans_id: "12345@claremont.edu".to_string().into(),
+                        address: "".into(),
+                        trans_id: Some("12345@claremont.edu".into()),
                         ..Default::default()
                     },
                 }),
@@ -1930,9 +1991,9 @@ mod tests {
                 "MAIL FROM:<> MTRK=my-ceritifier",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         mtrk: Mtrk {
-                            certifier: "my-ceritifier".to_string(),
+                            certifier: "my-ceritifier".into(),
                             timeout: 0,
                         }
                         .into(),
@@ -1944,9 +2005,9 @@ mod tests {
                 "MAIL FROM:<> MTRK=other-certifier:1234",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         mtrk: Mtrk {
-                            certifier: "other-certifier".to_string(),
+                            certifier: "other-certifier".into(),
                             timeout: 1234,
                         }
                         .into(),
@@ -1978,8 +2039,8 @@ mod tests {
                 "MAIL FROM:<> AUTH=<>",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        auth: "<>".to_string().into(),
+                        address: "".into(),
+                        auth: Some("<>".into()),
                         ..Default::default()
                     },
                 }),
@@ -1988,8 +2049,8 @@ mod tests {
                 "MAIL FROM:<> AUTH=e+3Dmc2@example.com",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
-                        auth: "e=mc2@example.com".to_string().into(),
+                        address: "".into(),
+                        auth: Some("e=mc2@example.com".into()),
                         ..Default::default()
                     },
                 }),
@@ -2002,7 +2063,7 @@ mod tests {
                 "MAIL FROM:<> MT-PRIORITY=3",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         mt_priority: 3,
                         ..Default::default()
                     },
@@ -2012,7 +2073,7 @@ mod tests {
                 "MAIL FROM:<> MT-PRIORITY=-6",
                 Ok(Request::Mail {
                     from: MailFrom {
-                        address: "".to_string(),
+                        address: "".into(),
                         mt_priority: -6,
                         ..Default::default()
                     },
@@ -2040,7 +2101,7 @@ mod tests {
                 "RCPT TO:<> RRVS=2014-04-03T23:01:00Z",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         rrvs: 1396566060,
                         flags: RCPT_RRVS_REJECT,
                         ..Default::default()
@@ -2051,7 +2112,7 @@ mod tests {
                 "RCPT TO:<> RRVS=1997-11-24T14:22:01-08:00;C",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         rrvs: 880410121,
                         flags: RCPT_RRVS_CONTINUE,
                         ..Default::default()
@@ -2062,7 +2123,7 @@ mod tests {
                 "RCPT TO:<> RRVS=2003-07-01T10:52:37+02:00;R",
                 Ok(Request::Rcpt {
                     to: RcptTo {
-                        address: "".to_string(),
+                        address: "".into(),
                         rrvs: 1057049557,
                         flags: RCPT_RRVS_REJECT,
                         ..Default::default()
@@ -2090,7 +2151,7 @@ mod tests {
                 Err(Error::InvalidParameter { param: "RRVS" }),
             ),
         ] {
-            let (request, parsed_request): (&str, Result<Request<String>, Error>) = item;
+            let (request, parsed_request): (&str, Result<Request<Cow<'_, str>>, Error>) = item;
 
             for extra in ["\n", "\r\n", " \n", " \r\n"] {
                 let request = format!("{request}{extra}");
@@ -2103,19 +2164,19 @@ mod tests {
         }
     }
 
-    impl From<&str> for MailFrom<String> {
-        fn from(value: &str) -> Self {
+    impl<'a> From<&'a str> for MailFrom<Cow<'a, str>> {
+        fn from(value: &'a str) -> Self {
             Self {
-                address: value.to_string(),
+                address: value.into(),
                 ..Default::default()
             }
         }
     }
 
-    impl From<&str> for RcptTo<String> {
-        fn from(value: &str) -> Self {
+    impl<'a> From<&'a str> for RcptTo<Cow<'a, str>> {
+        fn from(value: &'a str) -> Self {
             Self {
-                address: value.to_string(),
+                address: value.into(),
                 ..Default::default()
             }
         }
