@@ -122,19 +122,19 @@ impl<'a> Request<Cow<'a, str>> {
                 })
             }
             AUTH => {
-                if parser.stop_char != LF {
-                    if let Some(mechanism) = parser.mechanism()? {
-                        let initial_response = if parser.stop_char != LF {
-                            parser.text()?
-                        } else {
-                            Cow::Borrowed("")
-                        };
-                        parser.seek_lf()?;
-                        return Ok(Request::Auth {
-                            mechanism,
-                            initial_response,
-                        });
-                    }
+                if parser.stop_char != LF
+                    && let Some(mechanism) = parser.mechanism()?
+                {
+                    let initial_response = if parser.stop_char != LF {
+                        parser.text()?
+                    } else {
+                        Cow::Borrowed("")
+                    };
+                    parser.seek_lf()?;
+                    return Ok(Request::Auth {
+                        mechanism,
+                        initial_response,
+                    });
                 }
                 Err(Error::SyntaxError {
                     syntax: "AUTH mechanism [initial-response]",
@@ -451,9 +451,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                         let value = value.data;
 
                         let is_valid = value.is_empty()
-                            || value.len() <= MAX_ADDRESS_LEN
-                                && at_count == 1
-                                && lp_len > 0;
+                            || value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0;
 
                         return Ok(is_valid.then_some(value));
                     }
@@ -472,8 +470,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     in_quote = !in_quote;
                     self.flush_excluding_current(&mut value);
                 }
-                b'\\' if in_quote && last_ch != b'\\' => {
-                    self.flush_excluding_current(&mut value);
+                b'\\' if in_quote => {
+                    if last_ch != b'\\' {
+                        self.flush_excluding_current(&mut value);
+                    } else {
+                        // Escaped backslash
+                        last_ch = 0;
+                        continue;
+                    }
                 }
                 _ if in_quote => {}
                 _ => {
@@ -513,8 +517,13 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     in_quote = !in_quote;
                     self.flush_excluding_current(&mut value);
                 }
-                b'\\' if in_quote && last_ch != b'\\' => {
-                    self.flush_excluding_current(&mut value);
+                b'\\' if in_quote => {
+                    if last_ch != b'\\' {
+                        self.flush_excluding_current(&mut value);
+                    } else {
+                        last_ch = 0;
+                        continue;
+                    }
                 }
                 b'\r' => self.flush_excluding_current(&mut value),
                 _ => {}
@@ -2149,6 +2158,18 @@ mod tests {
             (
                 "RCPT TO:<> RRVS=ABC",
                 Err(Error::InvalidParameter { param: "RRVS" }),
+            ),
+            (
+                r#"MAIL FROM:<foo@bar"aa\\" hello world".com>"#,
+                Err(Error::SyntaxError {
+                    syntax: "MAIL FROM:<reverse-path> [parameters]",
+                }),
+            ),
+            (
+                r#"MAIL FROM:<foo@bar"aa\" hello world".com>"#,
+                Ok(Request::Mail {
+                    from: r#"foo@baraa" hello world.com"#.into(),
+                }),
             ),
         ] {
             let (request, parsed_request): (&str, Result<Request<Cow<'_, str>>, Error>) = item;

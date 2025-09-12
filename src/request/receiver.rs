@@ -57,7 +57,6 @@ impl RequestReceiver {
     pub fn ingest<'this, 'bytes, 'out>(
         &'this mut self,
         bytes: &mut Iter<'bytes, u8>,
-        buf: &[u8],
     ) -> Result<Request<Cow<'out, str>>, Error>
     where
         'this: 'out,
@@ -66,6 +65,7 @@ impl RequestReceiver {
         self.buf();
 
         if self.buf.is_empty() {
+            let buf = bytes.as_slice();
             match Request::parse(bytes) {
                 Err(Error::NeedsMoreData { bytes_left }) => {
                     if bytes_left > 0 {
@@ -244,9 +244,8 @@ impl DummyLineReceiver {
 
 #[cfg(test)]
 mod tests {
-    use crate::{request::receiver::RequestReceiver, Error, Request};
-
     use super::DataReceiver;
+    use crate::{Error, MailFrom, RcptTo, Request, request::receiver::RequestReceiver};
 
     #[test]
     fn data_receiver() {
@@ -343,6 +342,9 @@ mod tests {
                     "tls\n",
                     "quit\nnoop",
                     " hello\nehlo test\nvrfy name\n",
+                    "mail from:<hello",
+                    "@world.com>\nrcpt to:<",
+                    "test@domain.com>\n",
                 ],
                 vec![
                     Request::Data,
@@ -357,6 +359,30 @@ mod tests {
                     Request::Vrfy {
                         value: "name".to_string(),
                     },
+                    Request::Mail {
+                        from: MailFrom {
+                            address: "hello@world.com".to_string(),
+                            flags: 0,
+                            size: 0,
+                            trans_id: None,
+                            by: 0,
+                            env_id: None,
+                            solicit: None,
+                            mtrk: None,
+                            auth: None,
+                            hold_for: 0,
+                            hold_until: 0,
+                            mt_priority: 0,
+                        },
+                    },
+                    Request::Rcpt {
+                        to: RcptTo {
+                            address: "test@domain.com".to_string(),
+                            orcpt: None,
+                            rrvs: 0,
+                            flags: 0,
+                        },
+                    },
                 ],
             ),
             (
@@ -369,7 +395,7 @@ mod tests {
             for data in &data {
                 let mut bytes = data.as_bytes().iter();
                 loop {
-                    match r.ingest(&mut bytes, data.as_bytes()) {
+                    match r.ingest(&mut bytes) {
                         Ok(request) => {
                             requests.push(request.into_owned());
                             continue;
