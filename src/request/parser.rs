@@ -428,10 +428,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     self.flush_excluding_current(&mut value);
                     let value = value.data;
 
-                    let is_valid = value.is_empty()
-                        || value.len() <= MAX_ADDRESS_LEN && at_count == 1 && lp_len > 0;
-
-                    return Ok(is_valid.then_some(value));
+                    return Ok(match value.len() {
+                        1..=MAX_ADDRESS_LEN if at_count == 1 && lp_len > 0 => Some(value),
+                        10 if at_count == 0 && value.eq_ignore_ascii_case("postmaster") => {
+                            Some("".into())
+                        }
+                        0 => Some("".into()),
+                        _ => None,
+                    });
                 }
                 b'\r' => self.flush_excluding_current(&mut value),
                 b':' if !in_quote && self.first_excluding_current(&value) == Some(b'@') => {
@@ -1202,6 +1206,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
     }
 
     /// Construct a new `MaybeZeroCopy`, beginning a potentially zero-copy read from the input.
+    #[inline(always)]
     fn start_zero_copy(&self) -> MaybeZeroCopy<'y> {
         MaybeZeroCopy {
             remaining: self.bytes.as_slice(),
@@ -1226,11 +1231,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
 
     /// Get the first byte of a `MaybeZeroCopy`.
     fn first_excluding_current(&self, out: &MaybeZeroCopy<'y>) -> Option<u8> {
-        let first = out.data.bytes().next();
-        first.or_else(|| self.extra_before_current(out).first().copied())
+        out.data
+            .bytes()
+            .next()
+            .or_else(|| self.extra_before_current(out).first().copied())
     }
 
     /// Drop data up to the current cursor from the `MaybeZeroCopy`.
+    #[inline(always)]
     fn drop_extra(&self, out: &mut MaybeZeroCopy<'y>) {
         out.remaining = self.bytes.as_slice();
     }
@@ -1582,6 +1590,10 @@ mod tests {
                 }),
             ),
             ("MAIL  FROM : <>", Ok(Request::Mail { from: "".into() })),
+            (
+                "MAIL  FROM : <postmaster>",
+                Ok(Request::Mail { from: "".into() }),
+            ),
             ("MAIL  FROM : < >", Ok(Request::Mail { from: "".into() })),
             (
                 "MAIL FROM:<hi.there@valid.org>",
