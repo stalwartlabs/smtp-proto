@@ -784,7 +784,8 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                         let carry = i64::from(m_adj > month);
                         let adjust = if carry > 0 { 12 } else { 0 };
                         let y_adj = dt[0] as i64 + year_base - carry;
-                        let month_days = ((m_adj.wrapping_add(adjust)) * 62719 + 769) / 2048;
+                        let month_days =
+                            ((m_adj.wrapping_add(adjust)).wrapping_mul(62719) + 769) / 2048;
                         let leap_days = y_adj / 4 - y_adj / 100 + y_adj / 400;
                         (y_adj * 365 + leap_days + month_days as i64 + (dt[2] as i64 - 1) - 2472632)
                             * 86400

@@ -8,6 +8,7 @@
 use libfuzzer_sys::fuzz_target;
 
 use smtp_proto::{
+    EhloResponse, Request,
     request::{
         parser::Rfc5321Parser,
         receiver::{
@@ -16,7 +17,6 @@ use smtp_proto::{
         },
     },
     response::parser::ResponseReceiver,
-    EhloResponse, Request,
 };
 
 static RFC5321_ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz:=-<>,; \r\n";
@@ -26,7 +26,7 @@ fuzz_target!(|data: &[u8]| {
 
     for bytes in [data, &data_rfc5321] {
         let _ = Request::parse(&mut bytes.iter());
-        let _ = RequestReceiver::default().ingest(&mut bytes.iter(), &[]);
+        let _ = RequestReceiver::default().ingest(&mut bytes.iter());
         let _ = DataReceiver::new().ingest(&mut bytes.iter(), &mut vec![]);
         let _ = BdatReceiver::new(bytes.len(), true).ingest(&mut bytes.iter(), &mut vec![]);
         let _ = BdatReceiver::new(bytes.len(), false).ingest(&mut bytes.iter(), &mut vec![]);
@@ -50,8 +50,8 @@ fuzz_target!(|data: &[u8]| {
         let _ = Rfc5321Parser::new(&mut bytes.iter()).size();
         let _ = Rfc5321Parser::new(&mut bytes.iter()).integer();
         let _ = Rfc5321Parser::new(&mut bytes.iter()).timestamp();
-        let _ = Rfc5321Parser::new(&mut bytes.iter()).mail_from_parameters(String::new());
-        let _ = Rfc5321Parser::new(&mut bytes.iter()).rcpt_to_parameters(String::new());
+        let _ = Rfc5321Parser::new(&mut bytes.iter()).mail_from_parameters(Default::default());
+        let _ = Rfc5321Parser::new(&mut bytes.iter()).rcpt_to_parameters(Default::default());
         let _ = Rfc5321Parser::new(&mut bytes.iter()).mechanism();
     }
 });
