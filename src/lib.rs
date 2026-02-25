@@ -41,6 +41,32 @@ pub enum Request<T> {
     Quit,
 }
 
+impl<T> Request<T> {
+    /// Returns the SMTP command name for this request variant.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Request::Ehlo { .. } => "EHLO",
+            Request::Helo { .. } => "HELO",
+            Request::Lhlo { .. } => "LHLO",
+            Request::Mail { .. } => "MAIL",
+            Request::Rcpt { .. } => "RCPT",
+            Request::Data => "DATA",
+            Request::Bdat { .. } => "BDAT",
+            Request::Auth { .. } => "AUTH",
+            Request::Noop { .. } => "NOOP",
+            Request::Vrfy { .. } => "VRFY",
+            Request::Expn { .. } => "EXPN",
+            Request::Help { .. } => "HELP",
+            Request::Etrn { .. } => "ETRN",
+            Request::Atrn { .. } => "ATRN",
+            Request::Burl { .. } => "BURL",
+            Request::StartTls => "STARTTLS",
+            Request::Rset => "RSET",
+            Request::Quit => "QUIT",
+        }
+    }
+}
+
 impl Request<Cow<'_, str>> {
     pub fn into_owned(self) -> Request<String> {
         match self {
