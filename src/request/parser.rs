@@ -980,7 +980,19 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 CONPERM if self.stop_char.is_ascii_whitespace() => {
                     params.flags |= MAIL_CONPERM;
                 }
-                0 => (),
+                0 => {
+                    // hashed_value_long() returned 0, meaning no alphanumeric
+                    // characters were found before hitting a non-keyword char.
+                    // If stop_char is whitespace/LF this is just extra spacing
+                    // between parameters (harmless). Otherwise it's garbage
+                    // like ">", "!", etc. that should be rejected.
+                    if !self.stop_char.is_ascii_whitespace() {
+                        self.seek_lf()?;
+                        return Err(Error::SyntaxError {
+                            syntax: "MAIL FROM:<reverse-path> [parameters]",
+                        });
+                    }
+                }
                 unknown => {
                     let mut param = Vec::with_capacity(16);
                     for ch in unknown.to_le_bytes() {
@@ -1101,7 +1113,14 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 CONNEG if self.stop_char.is_ascii_whitespace() => {
                     params.flags |= RCPT_CONNEG;
                 }
-                0 => (),
+                0 => {
+                    if !self.stop_char.is_ascii_whitespace() {
+                        self.seek_lf()?;
+                        return Err(Error::SyntaxError {
+                            syntax: "RCPT TO:<forward-path> [parameters]",
+                        });
+                    }
+                }
                 unknown => {
                     let mut param = Vec::with_capacity(16);
                     for ch in unknown.to_le_bytes() {
@@ -1666,6 +1685,27 @@ mod tests {
                 "MAIL FROM:<> SMTPUTF8=YES",
                 Err(Error::UnsupportedParameter {
                     param: "SMTPUTF8=YES".to_string(),
+                }),
+            ),
+            // Garbage after address path (non-alphanumeric chars that don't
+            // form valid parameter keywords should be rejected, not silently
+            // consumed)
+            (
+                "MAIL FROM:<>>>>>",
+                Err(Error::SyntaxError {
+                    syntax: "MAIL FROM:<reverse-path> [parameters]",
+                }),
+            ),
+            (
+                "MAIL FROM:<a@b.com>>>",
+                Err(Error::SyntaxError {
+                    syntax: "MAIL FROM:<reverse-path> [parameters]",
+                }),
+            ),
+            (
+                "RCPT TO:<>>>>>",
+                Err(Error::SyntaxError {
+                    syntax: "RCPT TO:<forward-path> [parameters]",
                 }),
             ),
             // Parameters
