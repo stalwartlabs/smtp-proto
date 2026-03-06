@@ -2238,6 +2238,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn request_name() {
+        assert_eq!(Request::<String>::Quit.name(), "QUIT");
+        assert_eq!(Request::<String>::Data.name(), "DATA");
+        assert_eq!(Request::<String>::Rset.name(), "RSET");
+        assert_eq!(Request::<String>::StartTls.name(), "STARTTLS");
+        assert_eq!(
+            Request::Ehlo::<Cow<'_, str>> {
+                host: "test.com".into()
+            }
+            .name(),
+            "EHLO"
+        );
+        assert_eq!(
+            Request::Helo::<Cow<'_, str>> {
+                host: "test.com".into()
+            }
+            .name(),
+            "HELO"
+        );
+        assert_eq!(
+            Request::Mail {
+                from: MailFrom::<Cow<'_, str>>::default()
+            }
+            .name(),
+            "MAIL"
+        );
+        assert_eq!(
+            Request::Rcpt {
+                to: RcptTo::<Cow<'_, str>>::default()
+            }
+            .name(),
+            "RCPT"
+        );
+    }
+
     impl<'a> From<&'a str> for MailFrom<Cow<'a, str>> {
         fn from(value: &'a str) -> Self {
             Self {
