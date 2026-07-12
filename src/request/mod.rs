@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use crate::tokens::{define_tokens_128, define_tokens_64};
+use crate::tokens::{define_tokens_64, define_tokens_128};
 
 pub mod parser;
 pub mod receiver;

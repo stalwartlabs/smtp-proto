@@ -228,11 +228,7 @@ impl EhloResponse<String> {
                     DELIVERBY => {
                         response.deliver_by = if parser.stop_char != LF {
                             let db = parser.size()?;
-                            if db != usize::MAX {
-                                db as u64
-                            } else {
-                                0
-                            }
+                            if db != usize::MAX { db as u64 } else { 0 }
                         } else {
                             0
                         };
@@ -308,11 +304,7 @@ impl EhloResponse<String> {
                     SIZE => {
                         response.size = if parser.stop_char != LF {
                             let size = parser.size()?;
-                            if size != usize::MAX {
-                                size
-                            } else {
-                                0
-                            }
+                            if size != usize::MAX { size } else { 0 }
                         } else {
                             0
                         };

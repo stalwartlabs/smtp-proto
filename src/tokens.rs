@@ -41,6 +41,6 @@ macro_rules! define_tokens_128 {
     };
 }
 
-pub(crate) use define_tokens_128;
 pub(crate) use define_tokens_64;
+pub(crate) use define_tokens_128;
 pub(crate) use first;

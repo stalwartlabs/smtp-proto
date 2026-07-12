@@ -112,7 +112,7 @@ impl DataReceiver {
                     self.crlf_dot = true;
                 }
                 b'\n' if self.crlf_dot && self.last_ch == b'\r' => {
-                    buf.truncate(buf.len() - 3);
+                    buf.truncate(buf.len() - 1);
                     return true;
                 }
                 b'\r' => {
@@ -252,11 +252,11 @@ mod tests {
         'outer: for (data, message) in [
             (
                 vec!["hi\r\n", "..\r\n", ".a\r\n", "\r\n.\r\n"],
-                "hi\r\n.\r\na\r\n",
+                "hi\r\n.\r\na\r\n\r\n",
             ),
             (
                 vec!["\r\na\rb\nc\r\n.d\r\n..\r\n", "\r\n.\r\n"],
-                "\r\na\rb\nc\r\nd\r\n.\r\n",
+                "\r\na\rb\nc\r\nd\r\n.\r\n\r\n",
             ),
             // Test SMTP smuggling attempts
             (
@@ -272,6 +272,7 @@ mod tests {
                     "MAIL FROM:<hello@world.com>\r\n",
                     "RCPT TO:<test@domain.com\r\n",
                     "DATA\r\n",
+                    "\r\n",
                 ),
             ),
             (
@@ -287,6 +288,7 @@ mod tests {
                     "MAIL FROM:<hello@world.com>\r\n",
                     "RCPT TO:<test@domain.com\r\n",
                     "DATA\r\n",
+                    "\r\n",
                 ),
             ),
             (
@@ -302,6 +304,7 @@ mod tests {
                     "MAIL FROM:<hello@world.com>\r\n",
                     "RCPT TO:<test@domain.com\r\n",
                     "DATA\r\n",
+                    "\r\n",
                 ),
             ),
             (
@@ -317,6 +320,7 @@ mod tests {
                     "MAIL FROM:<hello@world.com>\r\n",
                     "RCPT TO:<test@domain.com\r\n",
                     "DATA\r\n",
+                    "\r\n",
                 ),
             ),
         ] {
