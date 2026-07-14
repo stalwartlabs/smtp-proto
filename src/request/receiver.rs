@@ -98,10 +98,12 @@ impl RequestReceiver {
 impl DataReceiver {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
+        // The data stream begins immediately after the CRLF that terminated
+        // the DATA command, so the first byte is at the start of a line.
         Self {
             crlf_dot: false,
-            last_ch: 0,
-            prev_last_ch: 0,
+            last_ch: b'\n',
+            prev_last_ch: b'\r',
         }
     }
 
@@ -250,6 +252,12 @@ mod tests {
     #[test]
     fn data_receiver() {
         'outer: for (data, message) in [
+            // Empty message: terminator immediately after DATA
+            (vec![".\r\n"], ""),
+            // Empty message split across reads
+            (vec![".", "\r", "\n"], ""),
+            // Dot-stuffing on the first line of the message
+            (vec!["..a\r\n", "\r\n.\r\n"], ".a\r\n\r\n"),
             (
                 vec!["hi\r\n", "..\r\n", ".a\r\n", "\r\n.\r\n"],
                 "hi\r\n.\r\na\r\n\r\n",
