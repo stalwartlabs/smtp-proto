@@ -5,7 +5,7 @@
  */
 
 use std::{
-    fmt::Display,
+    fmt::{self, Display},
     io::{self, Write},
 };
 
@@ -70,7 +70,8 @@ impl<T: Display> EhloResponse<T> {
                 EXT_FUTURE_RELEASE => write!(
                     writer,
                     "FUTURERELEASE {} {}\r\n",
-                    self.future_release_interval, self.future_release_datetime
+                    self.future_release_interval,
+                    Rfc3339(self.future_release_datetime)
                 ),
                 EXT_HELP => write!(writer, "HELP\r\n"),
                 EXT_MT_PRIORITY => write!(
@@ -173,6 +174,37 @@ impl BitToString for u64 {
             AUTH_ANONYMOUS => "ANONYMOUS",
             _ => "",
         }
+    }
+}
+
+struct Rfc3339(u64);
+
+impl Display for Rfc3339 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let days = (self.0 / 86400) as i64;
+        let seconds = self.0 % 86400;
+
+        // Ported from https://howardhinnant.github.io/date_algorithms.html#civil_from_days
+        let z = days + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = (z - era * 146097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe as i64 + era * 400 + i64::from(month <= 2);
+
+        write!(
+            f,
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            year,
+            month,
+            day,
+            seconds / 3600,
+            (seconds / 60) % 60,
+            seconds % 60
+        )
     }
 }
 

@@ -14,6 +14,7 @@ use super::*;
 
 const MAX_ADDRESS_LEN: usize = 256;
 const MAX_DOMAIN_LEN: usize = 255;
+const MAX_FUTURE_RELEASE_INTERVAL: usize = 999_999_999;
 
 impl<'a> Request<Cow<'a, str>> {
     pub fn parse(bytes: &mut Iter<'a, u8>) -> Result<Request<Cow<'a, str>>, Error> {
@@ -750,9 +751,11 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         let mut dt = [0u32; 8];
         let mut zone_multiplier = 1;
         let mut pos = 0;
+        let mut in_secfrac = false;
 
         for &ch in &mut self.bytes {
             match ch {
+                b'0'..=b'9' if in_secfrac => (),
                 b'0'..=b'9' if pos < 8 => {
                     dt[pos] = dt[pos]
                         .saturating_mul(10)
@@ -760,42 +763,61 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 }
                 b'-' if pos <= 1 || pos == 5 => {
                     pos += 1;
+                    in_secfrac = false;
                 }
                 b'+' if pos == 5 => {
                     zone_multiplier = -1;
                     pos += 1;
+                    in_secfrac = false;
                 }
-                b'T' if pos == 2 => {
+                b'T' | b't' if pos == 2 => {
                     pos += 1;
                 }
                 b':' if pos == 3 || pos == 4 || pos == 6 => {
                     pos += 1;
                 }
-                b'Z' if pos == 5 => {
+                b'.' if pos == 5 && !in_secfrac => {
+                    in_secfrac = true;
+                }
+                b'Z' | b'z' if pos == 5 => {
                     pos = 8;
                 }
                 _ => {
                     self.stop_char = ch;
-                    return Ok(if pos >= 7 {
-                        // Ported from https://github.com/protocolbuffers/upb/blob/22182e6e/upb/json_decode.c#L982-L992
-                        let month = dt[1];
-                        let year_base = 4800; /* Before min year, multiple of 400. */
-                        let m_adj = month.wrapping_sub(3); /* March-based month. */
-                        let carry = i64::from(m_adj > month);
-                        let adjust = if carry > 0 { 12 } else { 0 };
-                        let y_adj = dt[0] as i64 + year_base - carry;
-                        let month_days =
-                            ((m_adj.wrapping_add(adjust)).wrapping_mul(62719) + 769) / 2048;
-                        let leap_days = y_adj / 4 - y_adj / 100 + y_adj / 400;
-                        (y_adj * 365 + leap_days + month_days as i64 + (dt[2] as i64 - 1) - 2472632)
-                            * 86400
-                            + dt[3] as i64 * 3600
-                            + dt[4] as i64 * 60
-                            + dt[5] as i64
-                            + ((dt[6] as i64 * 3600 + dt[7] as i64 * 60) * zone_multiplier)
-                    } else {
-                        i64::MAX
-                    });
+                    return Ok(
+                        if pos >= 7
+                            && (1..=12).contains(&dt[1])
+                            && (1..=31).contains(&dt[2])
+                            && dt[3] <= 23
+                            && dt[4] <= 59
+                            && dt[5] <= 60
+                            && dt[6] <= 23
+                            && dt[7] <= 59
+                        {
+                            // Ported from https://github.com/protocolbuffers/upb/blob/22182e6e/upb/json_decode.c#L982-L992
+                            let month = dt[1];
+                            let year_base = 4800; /* Before min year, multiple of 400. */
+                            let m_adj = month.wrapping_sub(3); /* March-based month. */
+                            let carry = i64::from(m_adj > month);
+                            let adjust = if carry > 0 { 12 } else { 0 };
+                            let y_adj = dt[0] as i64 + year_base - carry;
+                            let month_days =
+                                ((m_adj.wrapping_add(adjust)).wrapping_mul(62719) + 769) / 2048;
+                            let leap_days = y_adj / 4 - y_adj / 100 + y_adj / 400;
+                            (y_adj * 365
+                                + leap_days
+                                + month_days as i64
+                                + (dt[2] as i64 - 1)
+                                - 2472632)
+                                * 86400
+                                + dt[3] as i64 * 3600
+                                + dt[4] as i64 * 60
+                                + dt[5] as i64
+                                + ((dt[6] as i64 * 3600 + dt[7] as i64 * 60) * zone_multiplier)
+                        } else {
+                            i64::MAX
+                        },
+                    );
                 }
             }
         }
@@ -873,8 +895,8 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                     }
                 }
                 HOLDUNTIL if self.stop_char == b'=' => {
-                    let hold = self.size()?;
-                    if hold != usize::MAX && self.stop_char.is_ascii_whitespace() {
+                    let hold = self.timestamp()?;
+                    if hold != i64::MAX && hold >= 0 && self.stop_char.is_ascii_whitespace() {
                         params.hold_until = hold as u64;
                     } else {
                         self.seek_lf()?;
@@ -883,7 +905,9 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 }
                 HOLDFOR if self.stop_char == b'=' => {
                     let hold = self.size()?;
-                    if hold != usize::MAX && self.stop_char.is_ascii_whitespace() {
+                    if (1..=MAX_FUTURE_RELEASE_INTERVAL).contains(&hold)
+                        && self.stop_char.is_ascii_whitespace()
+                    {
                         params.hold_for = hold as u64;
                     } else {
                         self.seek_lf()?;
@@ -1852,15 +1876,59 @@ mod tests {
                 Err(Error::InvalidParameter { param: "BY" }),
             ),
             (
-                "MAIL FROM:<> HOLDUNTIL=12345 HOLDFOR=67890",
+                "MAIL FROM:<> HOLDUNTIL=2026-08-10T03:00:00Z HOLDFOR=67890",
                 Ok(Request::Mail {
                     from: MailFrom {
                         address: "".into(),
                         hold_for: 67890,
-                        hold_until: 12345,
+                        hold_until: 1786330800,
                         ..Default::default()
                     },
                 }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=1997-11-24t14:22:01-08:00",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".into(),
+                        hold_until: 880410121,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=2026-08-10T03:00:00.512z",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".into(),
+                        hold_until: 1786330800,
+                        ..Default::default()
+                    },
+                }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=1786323600",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=2026-08-10",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=2026-08-10T03:00:00",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=2026-13-10T03:00:00Z",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=2026-08-10T25:00:00Z",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDUNTIL=1969-12-31T23:59:59Z",
+                Err(Error::InvalidParameter { param: "HOLDUNTIL" }),
             ),
             (
                 "MAIL FROM:<> HOLDUNTIL=0ABC",
@@ -1877,6 +1945,24 @@ mod tests {
             (
                 "MAIL FROM:<> HOLDFOR=",
                 Err(Error::InvalidParameter { param: "HOLDFOR" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDFOR=0",
+                Err(Error::InvalidParameter { param: "HOLDFOR" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDFOR=1000000000",
+                Err(Error::InvalidParameter { param: "HOLDFOR" }),
+            ),
+            (
+                "MAIL FROM:<> HOLDFOR=999999999",
+                Ok(Request::Mail {
+                    from: MailFrom {
+                        address: "".into(),
+                        hold_for: 999999999,
+                        ..Default::default()
+                    },
+                }),
             ),
             (
                 "RCPT TO:<> NOTIFY=FAILURE",

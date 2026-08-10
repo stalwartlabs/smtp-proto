@@ -252,7 +252,7 @@ impl EhloResponse<String> {
                             0
                         };
                         let max_datetime = if parser.stop_char != LF {
-                            parser.size()?
+                            parser.timestamp()?
                         } else {
                             0
                         };
@@ -262,8 +262,8 @@ impl EhloResponse<String> {
                         } else {
                             0
                         };
-                        response.future_release_datetime = if max_datetime != usize::MAX {
-                            max_datetime as u64
+                        response.future_release_datetime = if max_datetime != i64::MAX {
+                            max_datetime.max(0) as u64
                         } else {
                             0
                         };
@@ -368,7 +368,7 @@ mod tests {
                     "250-ETRN\n",
                     "250-EXPN\n",
                     "250-VRFY\n",
-                    "250-FUTURERELEASE 1234 5678\n",
+                    "250-FUTURERELEASE 1234 2026-08-10T03:00:00Z\n",
                     "250-HELP\n",
                     "250-MT-PRIORITY\n",
                     "250-MTRK\n",
@@ -411,7 +411,7 @@ mod tests {
                     auth_mechanisms: AUTH_GSSAPI | AUTH_DIGEST_MD5 | AUTH_PLAIN,
                     deliver_by: 0,
                     future_release_interval: 1234,
-                    future_release_datetime: 5678,
+                    future_release_datetime: 1786330800,
                     mt_priority: MtPriority::Mixer,
                     no_soliciting: Some("net.example:ADV".to_string()),
                     size: 1000000,
