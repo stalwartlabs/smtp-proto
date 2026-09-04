@@ -8,6 +8,7 @@ use crate::tokens::{define_tokens_64, define_tokens_128};
 
 pub mod parser;
 pub mod receiver;
+mod scan;
 
 pub const AUTH: u64 = crate::tokens::token64("AUTH"); // special, because it is `pub` instead of `pub(crate)`
 

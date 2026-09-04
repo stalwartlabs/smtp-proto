@@ -7,14 +7,21 @@
 use std::borrow::Cow;
 use std::char;
 use std::slice::Iter;
+use std::str::from_utf8;
 
 use crate::*;
 
+use super::scan::{
+    MEMCHR_MIN_LEN, TOKEN_UPPER, find_any3, find_any4, find_lf, find_non_atext, preceding_byte,
+    split_at_index,
+};
 use super::*;
 
 const MAX_ADDRESS_LEN: usize = 256;
 const MAX_DOMAIN_LEN: usize = 255;
 const MAX_FUTURE_RELEASE_INTERVAL: usize = 999_999_999;
+const MAX_EXACT_SIZE_DIGITS: u32 = usize::MAX.ilog10();
+const MAX_EXACT_INTEGER_DIGITS: u32 = i64::MAX.ilog10();
 
 impl<'a> Request<Cow<'a, str>> {
     pub fn parse(bytes: &mut Iter<'a, u8>) -> Result<Request<Cow<'a, str>>, Error> {
@@ -319,26 +326,13 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         let mut shift = 0;
 
         while let Some(&ch) = self.bytes.next() {
-            match ch {
-                b'A'..=b'Z' | b'0'..=b'9' | b'-' if shift < 64 => {
-                    value |= (ch as u64) << shift;
-                    shift += 8;
-                }
-                b'a'..=b'z' if shift < 64 => {
-                    value |= ((ch - b'a' + b'A') as u64) << shift;
-                    shift += 8;
-                }
-                b'\r' => (),
-                b' ' => {
-                    if value != 0 {
-                        self.stop_char = ch;
-                        return Ok(value);
-                    }
-                }
-                _ => {
-                    self.stop_char = ch;
-                    return Ok(value);
-                }
+            let token = TOKEN_UPPER[ch as usize];
+            if token != 0 && shift < 64 {
+                value |= (token as u64) << shift;
+                shift += 8;
+            } else if ch != b'\r' && (ch != b' ' || value != 0) {
+                self.stop_char = ch;
+                return Ok(value);
             }
         }
 
@@ -349,30 +343,23 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
 
     #[allow(clippy::while_let_on_iterator)]
     pub fn hashed_value_long(&mut self) -> Result<u128, Error> {
-        let mut value: u128 = 0;
+        let mut low: u64 = 0;
+        let mut high: u64 = 0;
         let mut shift = 0;
 
         while let Some(&ch) = self.bytes.next() {
-            match ch {
-                b'A'..=b'Z' | b'0'..=b'9' | b'-' if shift < 128 => {
-                    value |= (ch as u128) << shift;
-                    shift += 8;
+            let token = TOKEN_UPPER[ch as usize];
+            if token != 0 && shift < 128 {
+                let bits = (token as u64) << (shift & 63);
+                if shift < 64 {
+                    low |= bits;
+                } else {
+                    high |= bits;
                 }
-                b'a'..=b'z' if shift < 128 => {
-                    value |= ((ch - b'a' + b'A') as u128) << shift;
-                    shift += 8;
-                }
-                b' ' => {
-                    if value != 0 {
-                        self.stop_char = b' ';
-                        return Ok(value);
-                    }
-                }
-                b'\r' => (),
-                _ => {
-                    self.stop_char = ch;
-                    return Ok(value);
-                }
+                shift += 8;
+            } else if ch != b'\r' && (ch != b' ' || (low | high) != 0) {
+                self.stop_char = ch;
+                return Ok(low as u128 | (high as u128) << 64);
             }
         }
 
@@ -388,7 +375,25 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         let mut at_count = 0;
         let mut lp_len = 0;
 
-        while let Some(&ch) = self.bytes.next() {
+        loop {
+            let slice = self.bytes.as_slice();
+            let pos = if in_quote {
+                find_any4(slice, LF, b'"', b'\\', b'\r')
+            } else {
+                find_non_atext(slice)
+            };
+            let (found, rest) = split_at_index(slice, pos);
+            if let Some(prev) = preceding_byte(slice, rest) {
+                last_ch = prev;
+            }
+            *self.bytes = rest.iter();
+
+            let Some(ch) = found else {
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
+            };
+
             match ch {
                 b'0'..=b'9'
                 | b'a'..=b'z'
@@ -493,10 +498,6 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
 
             last_ch = ch;
         }
-
-        Err(Error::NeedsMoreData {
-            bytes_left: self.bytes_left,
-        })
     }
 
     pub fn string(&mut self) -> Result<Cow<'y, str>, Error> {
@@ -504,7 +505,25 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         let mut value = self.start_zero_copy();
         let mut last_ch = 0;
 
-        while let Some(&ch) = self.bytes.next() {
+        loop {
+            let slice = self.bytes.as_slice();
+            let pos = if in_quote {
+                find_any4(slice, LF, b'"', b'\\', b'\r')
+            } else {
+                find_any4(slice, LF, b' ', b'"', b'\r')
+            };
+            let (found, rest) = split_at_index(slice, pos);
+            if let Some(prev) = preceding_byte(slice, rest) {
+                last_ch = prev;
+            }
+            *self.bytes = rest.iter();
+
+            let Some(ch) = found else {
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
+            };
+
             match ch {
                 b' ' if !in_quote => {
                     self.flush_excluding_current(&mut value);
@@ -536,36 +555,43 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
 
             last_ch = ch;
         }
-
-        Err(Error::NeedsMoreData {
-            bytes_left: self.bytes_left,
-        })
     }
 
-    #[allow(clippy::while_let_on_iterator)]
     pub fn text(&mut self) -> Result<Cow<'y, str>, Error> {
         let mut value = self.start_zero_copy();
-        while let Some(&ch) = self.bytes.next() {
-            match ch {
-                b'\n' | b' ' => {
-                    self.flush_excluding_current(&mut value);
-                    self.stop_char = ch;
-                    return Ok(value.data);
-                }
-                b'\r' => self.flush_excluding_current(&mut value),
-                _ => {}
+        loop {
+            let slice = self.bytes.as_slice();
+            let (found, rest) = split_at_index(slice, find_any3(slice, LF, b' ', b'\r'));
+            *self.bytes = rest.iter();
+
+            let Some(ch) = found else {
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
+            };
+
+            self.flush_excluding_current(&mut value);
+            if ch != b'\r' {
+                self.stop_char = ch;
+                return Ok(value.data);
             }
         }
-
-        Err(Error::NeedsMoreData {
-            bytes_left: self.bytes_left,
-        })
     }
 
     #[allow(clippy::while_let_on_iterator)]
     pub fn xtext(&mut self) -> Result<Cow<'y, str>, Error> {
         let mut value = self.start_zero_copy();
-        while let Some(&ch) = self.bytes.next() {
+        loop {
+            let slice = self.bytes.as_slice();
+            let (found, rest) = split_at_index(slice, find_any4(slice, LF, b' ', b'+', b'\r'));
+            *self.bytes = rest.iter();
+
+            let Some(ch) = found else {
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
+            };
+
             match ch {
                 b'\n' | b' ' => {
                     self.flush_excluding_current(&mut value);
@@ -600,16 +626,21 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 _ => {}
             }
         }
-
-        Err(Error::NeedsMoreData {
-            bytes_left: self.bytes_left,
-        })
     }
 
-    #[allow(clippy::while_let_on_iterator)]
     pub fn seek_char(&mut self, stop_char: u8) -> Result<Cow<'y, str>, Error> {
         let mut value = self.start_zero_copy();
-        while let Some(&ch) = self.bytes.next() {
+        loop {
+            let slice = self.bytes.as_slice();
+            let (found, rest) = split_at_index(slice, find_any4(slice, LF, b' ', b'\r', stop_char));
+            *self.bytes = rest.iter();
+
+            let Some(ch) = found else {
+                return Err(Error::NeedsMoreData {
+                    bytes_left: self.bytes_left,
+                });
+            };
+
             match ch {
                 b'\n' => {
                     self.flush_excluding_current(&mut value);
@@ -632,25 +663,41 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                 _ => {}
             }
         }
-
-        Err(Error::NeedsMoreData {
-            bytes_left: self.bytes_left,
-        })
     }
 
     #[inline(always)]
     pub fn seek_lf(&mut self) -> Result<(), Error> {
         if self.stop_char != LF {
+            if self.bytes.len() >= MEMCHR_MIN_LEN {
+                return self.seek_lf_bulk();
+            }
+
             for &ch in &mut self.bytes {
                 if ch == LF {
                     return Ok(());
                 }
             }
+
             Err(Error::NeedsMoreData {
                 bytes_left: self.bytes_left,
             })
         } else {
             Ok(())
+        }
+    }
+
+    #[inline(never)]
+    fn seek_lf_bulk(&mut self) -> Result<(), Error> {
+        let slice = self.bytes.as_slice();
+        let (found, rest) = split_at_index(slice, find_lf(slice));
+        *self.bytes = rest.iter();
+
+        if found.is_some() {
+            Ok(())
+        } else {
+            Err(Error::NeedsMoreData {
+                bytes_left: self.bytes_left,
+            })
         }
     }
 
@@ -677,8 +724,32 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
+    #[allow(clippy::while_let_on_iterator)]
     pub fn size(&mut self) -> Result<usize, Error> {
-        let mut value = usize::MAX;
+        let mut value: usize = 0;
+        let mut digits = 0;
+
+        while let Some(&ch) = self.bytes.next() {
+            let digit = ch.wrapping_sub(b'0');
+            if digit < 10 {
+                if digits == MAX_EXACT_SIZE_DIGITS {
+                    return self.size_saturating(value, digit);
+                }
+                value = value * 10 + digit as usize;
+                digits += 1;
+            } else if ch != b'\r' && (ch != b' ' || digits != 0) {
+                self.stop_char = ch;
+                return Ok(if digits != 0 { value } else { usize::MAX });
+            }
+        }
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
+    }
+
+    #[inline(never)]
+    fn size_saturating(&mut self, value: usize, digit: u8) -> Result<usize, Error> {
+        let mut value = value.saturating_mul(10).saturating_add(digit as usize);
         for &ch in &mut self.bytes {
             match ch {
                 b'0'..=b'9' => {
@@ -708,9 +779,42 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         })
     }
 
+    #[allow(clippy::while_let_on_iterator)]
     pub fn integer(&mut self) -> Result<i64, Error> {
-        let mut value = i64::MAX;
+        let mut value: i64 = 0;
+        let mut digits = 0;
         let mut multiplier = 1;
+
+        while let Some(&ch) = self.bytes.next() {
+            let digit = ch.wrapping_sub(b'0');
+            if digit < 10 {
+                if digits == MAX_EXACT_INTEGER_DIGITS {
+                    return self.integer_saturating(value, digit, multiplier);
+                }
+                value = value * 10 + digit as i64;
+                digits += 1;
+            } else if digits == 0 && (ch == b'-' || ch == b'+') {
+                if ch == b'-' {
+                    multiplier = -1;
+                }
+            } else if ch != b'\r' && (ch != b' ' || digits != 0) {
+                self.stop_char = ch;
+                return Ok(if digits != 0 {
+                    value * multiplier
+                } else {
+                    i64::MAX
+                });
+            }
+        }
+        Err(Error::NeedsMoreData {
+            bytes_left: self.bytes_left,
+        })
+    }
+
+    #[inline(never)]
+    fn integer_saturating(&mut self, value: i64, digit: u8, multiplier: i64) -> Result<i64, Error> {
+        let mut value = value.saturating_mul(10).saturating_add(digit as i64);
+        let mut multiplier = multiplier;
 
         for &ch in &mut self.bytes {
             match ch {
@@ -804,10 +908,7 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
                             let month_days =
                                 ((m_adj.wrapping_add(adjust)).wrapping_mul(62719) + 769) / 2048;
                             let leap_days = y_adj / 4 - y_adj / 100 + y_adj / 400;
-                            (y_adj * 365
-                                + leap_days
-                                + month_days as i64
-                                + (dt[2] as i64 - 1)
+                            (y_adj * 365 + leap_days + month_days as i64 + (dt[2] as i64 - 1)
                                 - 2472632)
                                 * 86400
                                 + dt[3] as i64 * 3600
@@ -1292,8 +1393,15 @@ impl<'x, 'y> Rfc5321Parser<'x, 'y> {
         let extra = self.extra_before_current(out);
         self.drop_extra(out);
 
+        if extra.is_empty() {
+            return;
+        }
+
         if out.data.is_empty() {
-            out.data = String::from_utf8_lossy(extra);
+            out.data = match from_utf8(extra) {
+                Ok(valid) => Cow::Borrowed(valid),
+                Err(_) => String::from_utf8_lossy(extra),
+            };
         } else {
             if let Cow::Borrowed(s) = out.data {
                 let mut buf = String::with_capacity(32);

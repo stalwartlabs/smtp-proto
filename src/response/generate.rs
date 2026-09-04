@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
+use crate::*;
 use std::{
     fmt::{self, Display},
     io::{self, Write},
 };
-
-use crate::*;
 
 impl<T: Display> EhloResponse<T> {
     pub fn new(hostname: T) -> Self {
@@ -27,85 +26,93 @@ impl<T: Display> EhloResponse<T> {
     }
 
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
-        write!(writer, "250-{} you had me at EHLO\r\n", self.hostname)?;
+        writer.write_all(b"250-")?;
+        write!(writer, "{}", self.hostname)?;
+        writer.write_all(b" you had me at EHLO\r\n")?;
         let mut capabilities = self.capabilities;
 
         while capabilities != 0 {
             let capability = 1 << (31 - capabilities.leading_zeros());
             capabilities ^= capability;
 
-            writer.write_all(b"250")?;
-            writer.write_all(if capabilities != 0 { b"-" } else { b" " })?;
+            writer.write_all(if capabilities != 0 { b"250-" } else { b"250 " })?;
             match capability {
-                EXT_8BIT_MIME => write!(writer, "8BITMIME\r\n"),
-                EXT_ATRN => write!(writer, "ATRN\r\n"),
+                EXT_8BIT_MIME => writer.write_all(b"8BITMIME\r\n"),
+                EXT_ATRN => writer.write_all(b"ATRN\r\n"),
                 EXT_AUTH => {
                     writer.write_all(b"AUTH")?;
                     let mut mechanisms = self.auth_mechanisms;
                     while mechanisms != 0 {
                         let item = 1 << (63 - mechanisms.leading_zeros());
                         mechanisms ^= item;
-                        write!(writer, " {}", item.to_mechanism())?;
+                        writer.write_all(b" ")?;
+                        writer.write_all(item.to_mechanism().as_bytes())?;
                     }
                     writer.write_all(b"\r\n")
                 }
-                EXT_BINARY_MIME => write!(writer, "BINARYMIME\r\n"),
-                EXT_BURL => write!(writer, "BURL\r\n"),
-                EXT_CHECKPOINT => write!(writer, "CHECKPOINT\r\n"),
-                EXT_CHUNKING => write!(writer, "CHUNKING\r\n"),
-                EXT_CONNEG => write!(writer, "CONNEG\r\n"),
-                EXT_CONPERM => write!(writer, "CONPERM\r\n"),
+                EXT_BINARY_MIME => writer.write_all(b"BINARYMIME\r\n"),
+                EXT_BURL => writer.write_all(b"BURL\r\n"),
+                EXT_CHECKPOINT => writer.write_all(b"CHECKPOINT\r\n"),
+                EXT_CHUNKING => writer.write_all(b"CHUNKING\r\n"),
+                EXT_CONNEG => writer.write_all(b"CONNEG\r\n"),
+                EXT_CONPERM => writer.write_all(b"CONPERM\r\n"),
                 EXT_DELIVER_BY => {
                     if self.deliver_by > 0 {
-                        write!(writer, "DELIVERBY {}\r\n", self.deliver_by)
+                        writer.write_all(b"DELIVERBY ")?;
+                        write_decimal(&mut writer, self.deliver_by)?;
+                        writer.write_all(b"\r\n")
                     } else {
-                        write!(writer, "DELIVERBY\r\n")
+                        writer.write_all(b"DELIVERBY\r\n")
                     }
                 }
-                EXT_DSN => write!(writer, "DSN\r\n"),
-                EXT_ENHANCED_STATUS_CODES => write!(writer, "ENHANCEDSTATUSCODES\r\n"),
-                EXT_ETRN => write!(writer, "ETRN\r\n"),
-                EXT_EXPN => write!(writer, "EXPN\r\n"),
-                EXT_VRFY => write!(writer, "VRFY\r\n"),
-                EXT_FUTURE_RELEASE => write!(
-                    writer,
-                    "FUTURERELEASE {} {}\r\n",
-                    self.future_release_interval,
-                    Rfc3339(self.future_release_datetime)
-                ),
-                EXT_HELP => write!(writer, "HELP\r\n"),
-                EXT_MT_PRIORITY => write!(
-                    writer,
-                    "MT-PRIORITY {}\r\n",
-                    match self.mt_priority {
-                        MtPriority::Mixer => "MIXER",
-                        MtPriority::Stanag4406 => "STANAG4406",
-                        MtPriority::Nsep => "NSEP",
-                    }
-                ),
-                EXT_MTRK => write!(writer, "MTRK\r\n"),
+                EXT_DSN => writer.write_all(b"DSN\r\n"),
+                EXT_ENHANCED_STATUS_CODES => writer.write_all(b"ENHANCEDSTATUSCODES\r\n"),
+                EXT_ETRN => writer.write_all(b"ETRN\r\n"),
+                EXT_EXPN => writer.write_all(b"EXPN\r\n"),
+                EXT_VRFY => writer.write_all(b"VRFY\r\n"),
+                EXT_FUTURE_RELEASE => {
+                    writer.write_all(b"FUTURERELEASE ")?;
+                    write_decimal(&mut writer, self.future_release_interval)?;
+                    writer.write_all(b" ")?;
+                    write!(writer, "{}\r\n", Rfc3339(self.future_release_datetime))
+                }
+                EXT_HELP => writer.write_all(b"HELP\r\n"),
+                EXT_MT_PRIORITY => {
+                    writer.write_all(b"MT-PRIORITY ")?;
+                    writer.write_all(match self.mt_priority {
+                        MtPriority::Mixer => b"MIXER".as_slice(),
+                        MtPriority::Stanag4406 => b"STANAG4406".as_slice(),
+                        MtPriority::Nsep => b"NSEP".as_slice(),
+                    })?;
+                    writer.write_all(b"\r\n")
+                }
+                EXT_MTRK => writer.write_all(b"MTRK\r\n"),
                 EXT_NO_SOLICITING => {
                     if let Some(keywords) = &self.no_soliciting {
-                        write!(writer, "NO-SOLICITING {keywords}\r\n")
+                        writer.write_all(b"NO-SOLICITING ")?;
+                        writer.write_all(keywords.as_bytes())?;
+                        writer.write_all(b"\r\n")
                     } else {
-                        write!(writer, "NO-SOLICITING\r\n")
+                        writer.write_all(b"NO-SOLICITING\r\n")
                     }
                 }
-                EXT_ONEX => write!(writer, "ONEX\r\n"),
-                EXT_PIPELINING => write!(writer, "PIPELINING\r\n"),
-                EXT_REQUIRE_TLS => write!(writer, "REQUIRETLS\r\n"),
-                EXT_RRVS => write!(writer, "RRVS\r\n"),
+                EXT_ONEX => writer.write_all(b"ONEX\r\n"),
+                EXT_PIPELINING => writer.write_all(b"PIPELINING\r\n"),
+                EXT_REQUIRE_TLS => writer.write_all(b"REQUIRETLS\r\n"),
+                EXT_RRVS => writer.write_all(b"RRVS\r\n"),
                 EXT_SIZE => {
                     if self.size > 0 {
-                        write!(writer, "SIZE {}\r\n", self.size)
+                        writer.write_all(b"SIZE ")?;
+                        write_decimal(&mut writer, self.size as u64)?;
+                        writer.write_all(b"\r\n")
                     } else {
-                        write!(writer, "SIZE\r\n")
+                        writer.write_all(b"SIZE\r\n")
                     }
                 }
-                EXT_SMTP_UTF8 => write!(writer, "SMTPUTF8\r\n"),
-                EXT_START_TLS => write!(writer, "STARTTLS\r\n"),
-                EXT_VERB => write!(writer, "VERB\r\n"),
-                _ => write!(writer, ""),
+                EXT_SMTP_UTF8 => writer.write_all(b"SMTPUTF8\r\n"),
+                EXT_START_TLS => writer.write_all(b"STARTTLS\r\n"),
+                EXT_VERB => writer.write_all(b"VERB\r\n"),
+                _ => Ok(()),
             }?;
         }
 
@@ -115,11 +122,25 @@ impl<T: Display> EhloResponse<T> {
 
 impl<T: Display> Response<T> {
     pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
-        write!(
-            writer,
-            "{} {}.{}.{} {}\r\n",
-            self.code, self.esc[0], self.esc[1], self.esc[2], self.message
-        )
+        let [class, subject, detail] = self.esc;
+        if (100..1000).contains(&self.code) && class < 10 && subject < 10 && detail < 10 {
+            writer.write_all(&[
+                b'0' + (self.code / 100) as u8,
+                b'0' + (self.code / 10 % 10) as u8,
+                b'0' + (self.code % 10) as u8,
+                b' ',
+                b'0' + class,
+                b'.',
+                b'0' + subject,
+                b'.',
+                b'0' + detail,
+                b' ',
+            ])?;
+        } else {
+            write!(writer, "{} {class}.{subject}.{detail} ", self.code)?;
+        }
+        write!(writer, "{}", self.message)?;
+        writer.write_all(b"\r\n")
     }
 }
 
@@ -195,16 +216,40 @@ impl Display for Rfc3339 {
         let month = if mp < 10 { mp + 3 } else { mp - 9 };
         let year = yoe as i64 + era * 400 + i64::from(month <= 2);
 
-        write!(
-            f,
-            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-            year,
-            month,
-            day,
-            seconds / 3600,
-            (seconds / 60) % 60,
-            seconds % 60
-        )
+        let hour = seconds / 3600;
+        let minute = (seconds / 60) % 60;
+        let second = seconds % 60;
+
+        if (0..10000).contains(&year) {
+            let buffer = [
+                b'0' + (year / 1000 % 10) as u8,
+                b'0' + (year / 100 % 10) as u8,
+                b'0' + (year / 10 % 10) as u8,
+                b'0' + (year % 10) as u8,
+                b'-',
+                b'0' + (month / 10) as u8,
+                b'0' + (month % 10) as u8,
+                b'-',
+                b'0' + (day / 10) as u8,
+                b'0' + (day % 10) as u8,
+                b'T',
+                b'0' + (hour / 10) as u8,
+                b'0' + (hour % 10) as u8,
+                b':',
+                b'0' + (minute / 10) as u8,
+                b'0' + (minute % 10) as u8,
+                b':',
+                b'0' + (second / 10) as u8,
+                b'0' + (second % 10) as u8,
+                b'Z',
+            ];
+            f.write_str(str::from_utf8(&buffer).map_err(|_| fmt::Error)?)
+        } else {
+            write!(
+                f,
+                "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
+            )
+        }
     }
 }
 
@@ -1221,6 +1266,189 @@ impl<T: Display> Response<T> {
             )
                 .into(),
             _ => None,
+        }
+    }
+}
+
+fn write_decimal(mut writer: impl Write, value: u64) -> io::Result<()> {
+    let mut buffer = [0u8; 20];
+    let mut remaining = value;
+    let mut len = 0;
+
+    for slot in buffer.iter_mut().rev() {
+        *slot = b'0' + (remaining % 10) as u8;
+        remaining /= 10;
+        len += 1;
+        if remaining == 0 {
+            break;
+        }
+    }
+
+    let (_, digits) = buffer.split_at(buffer.len() - len);
+    writer.write_all(digits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CODES: [u16; 10] = [0, 9, 10, 99, 100, 250, 550, 999, 1000, 65535];
+    const ESC_VALUES: [u8; 7] = [0, 1, 9, 10, 99, 100, 255];
+    const INTERVALS: [u64; 8] = [0, 1, 9, 10, 99, 300, 4_294_967_296, u64::MAX];
+
+    fn sizes() -> [usize; 7] {
+        [0, 1, 9, 10, 99, 4_294_967_296_u64 as usize, usize::MAX]
+    }
+
+    fn datetimes() -> Vec<u64> {
+        let mut values = vec![
+            0,
+            1,
+            86399,
+            951_782_400,
+            1_714_566_600,
+            4_102_444_800,
+            u64::MAX,
+        ];
+        let mut state = 0x2545_F491_4F6C_DD1D_u64;
+        for _ in 0..64 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push(state % 253_402_300_800);
+            values.push(state);
+        }
+        values
+    }
+
+    fn reference_response(code: u16, esc: [u8; 3], message: &str) -> Vec<u8> {
+        format!("{} {}.{}.{} {}\r\n", code, esc[0], esc[1], esc[2], message).into_bytes()
+    }
+
+    fn reference_rfc3339(timestamp: u64) -> String {
+        let days = (timestamp / 86400) as i64;
+        let seconds = timestamp % 86400;
+
+        let z = days + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = (z - era * 146097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe as i64 + era * 400 + i64::from(month <= 2);
+
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+            year,
+            month,
+            day,
+            seconds / 3600,
+            (seconds / 60) % 60,
+            seconds % 60
+        )
+    }
+
+    fn ehlo_with(capability: u32) -> EhloResponse<&'static str> {
+        let mut response = EhloResponse::new("mail.example.com");
+        response.capabilities = capability;
+        response
+    }
+
+    fn serialized(response: &EhloResponse<&'static str>) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        response
+            .write(&mut buffer)
+            .expect("writing to a vector cannot fail");
+        buffer
+    }
+
+    const EHLO_GREETING: &str = "250-mail.example.com you had me at EHLO\r\n";
+
+    #[test]
+    fn response_write_matches_display_formatting() {
+        for code in CODES {
+            for e0 in ESC_VALUES {
+                for e1 in ESC_VALUES {
+                    for e2 in ESC_VALUES {
+                        for message in ["", "OK", "Sender <john.doe@example.com> OK"] {
+                            let mut buffer = Vec::new();
+                            Response::new(code, e0, e1, e2, message)
+                                .write(&mut buffer)
+                                .expect("writing to a vector cannot fail");
+                            assert_eq!(
+                                buffer,
+                                reference_response(code, [e0, e1, e2], message),
+                                "code {code} esc {e0}.{e1}.{e2}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rfc3339_matches_display_formatting() {
+        for timestamp in datetimes() {
+            assert_eq!(
+                Rfc3339(timestamp).to_string(),
+                reference_rfc3339(timestamp),
+                "timestamp {timestamp}"
+            );
+        }
+    }
+
+    #[test]
+    fn ehlo_size_matches_display_formatting() {
+        for size in sizes() {
+            let mut response = ehlo_with(EXT_SIZE);
+            response.size = size;
+            let expected = if size > 0 {
+                format!("{EHLO_GREETING}250 SIZE {size}\r\n")
+            } else {
+                format!("{EHLO_GREETING}250 SIZE\r\n")
+            };
+            assert_eq!(serialized(&response), expected.into_bytes(), "size {size}");
+        }
+    }
+
+    #[test]
+    fn ehlo_deliver_by_matches_display_formatting() {
+        for deliver_by in INTERVALS {
+            let mut response = ehlo_with(EXT_DELIVER_BY);
+            response.deliver_by = deliver_by;
+            let expected = if deliver_by > 0 {
+                format!("{EHLO_GREETING}250 DELIVERBY {deliver_by}\r\n")
+            } else {
+                format!("{EHLO_GREETING}250 DELIVERBY\r\n")
+            };
+            assert_eq!(
+                serialized(&response),
+                expected.into_bytes(),
+                "deliver_by {deliver_by}"
+            );
+        }
+    }
+
+    #[test]
+    fn ehlo_future_release_matches_display_formatting() {
+        for interval in INTERVALS {
+            for datetime in datetimes() {
+                let mut response = ehlo_with(EXT_FUTURE_RELEASE);
+                response.future_release_interval = interval;
+                response.future_release_datetime = datetime;
+                let expected = format!(
+                    "{EHLO_GREETING}250 FUTURERELEASE {interval} {}\r\n",
+                    reference_rfc3339(datetime)
+                );
+                assert_eq!(
+                    serialized(&response),
+                    expected.into_bytes(),
+                    "interval {interval} datetime {datetime}"
+                );
+            }
         }
     }
 }
