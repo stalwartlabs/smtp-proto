@@ -134,6 +134,9 @@ impl<'a> Request<Cow<'a, str>> {
                     && let Some(mechanism) = parser.mechanism()?
                 {
                     let initial_response = if parser.stop_char != LF {
+                        while let Some(rest) = parser.bytes.as_slice().strip_prefix(b" ") {
+                            *parser.bytes = rest.iter();
+                        }
                         parser.text()?
                     } else {
                         Cow::Borrowed("")
@@ -1613,6 +1616,34 @@ mod tests {
                 Ok(Request::Auth {
                     mechanism: AUTH_SCRAM_SHA_256_PLUS,
                     initial_response: "base64_goes_here".into(),
+                }),
+            ),
+            (
+                "AUTH PLAIN  dGVzdA==",
+                Ok(Request::Auth {
+                    mechanism: AUTH_PLAIN,
+                    initial_response: "dGVzdA==".into(),
+                }),
+            ),
+            (
+                "AUTH LOGIN   dGVzdA==",
+                Ok(Request::Auth {
+                    mechanism: AUTH_LOGIN,
+                    initial_response: "dGVzdA==".into(),
+                }),
+            ),
+            (
+                "AUTH PLAIN  =",
+                Ok(Request::Auth {
+                    mechanism: AUTH_PLAIN,
+                    initial_response: "=".into(),
+                }),
+            ),
+            (
+                "AUTH PLAIN   ",
+                Ok(Request::Auth {
+                    mechanism: AUTH_PLAIN,
+                    initial_response: "".into(),
                 }),
             ),
             (
